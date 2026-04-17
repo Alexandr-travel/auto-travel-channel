@@ -16,12 +16,12 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# ✅ Глобальные переменные
+# ✅ Глобальные переменные (на уровне модуля)
 parser = TravelPayoutsParser()
 poster = ChannelPoster()
 last_post_time = None
 posts_today = 0
-last_reset_date = None  # ✅ Для корректного сброса счётчика
+last_reset_date = None
 
 async def can_post() -> bool:
     """Проверка, можно ли публиковать пост"""
@@ -91,7 +91,7 @@ async def weekend_job():
 
 async def setup_scheduler():
     """Настройка расписания"""
-    scheduler = AsyncIOScheduler(timezone='UTC')  # ✅ Railway использует UTC
+    scheduler = AsyncIOScheduler(timezone='UTC')
     
     scheduler.add_job(
         morning_job,
@@ -123,24 +123,26 @@ async def setup_scheduler():
 
 async def main():
     """Главная функция"""
+    # ✅ global в САМОМ НАЧАЛЕ функции, до любого использования!
+    global posts_today, last_reset_date, last_post_time
+    
     logger.info("🚀 Запуск авто-канала туров...")
     
     try:
-        # ✅ Проверка подключения к каналу
+        # Проверка подключения к каналу
         chat = await poster.bot.get_chat(CHANNEL_ID)
         logger.info(f"✅ Подключен к каналу: {chat.title or CHANNEL_ID}")
         
-        # ✅ Запускаем планировщик
+        # Запускаем планировщик
         scheduler = await setup_scheduler()
         
-        # ✅ Основной цикл с ИСПРАВЛЕННЫМ сбросом счётчика
+        # Основной цикл
         while True:
             await asyncio.sleep(60)
             
-            # ✅ Сброс счётчика ТОЛЬКО 1 раз в сутки в 00:00 UTC
+            # Сброс счётчика 1 раз в сутки в 00:00 UTC
             today = datetime.now().date()
             if today != last_reset_date and datetime.now().hour == 0:
-                global posts_today, last_reset_date
                 posts_today = 0
                 last_reset_date = today
                 logger.info(f"🔄 Счётчик постов сброшен ({today})")

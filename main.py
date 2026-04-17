@@ -1,9 +1,14 @@
 import asyncio
 import logging
 import os
+import traceback
 from datetime import datetime, date
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
+
+from aiogram import Bot
+from aiogram.types import Message
+from aiogram.filters import Command
 
 from config import SCHEDULE, POST_SETTINGS, LOG_LEVEL, CHANNEL_ID, FILTERS
 from parser import TravelPayoutsParser
@@ -16,12 +21,44 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# ✅ Глобальные переменные (на уровне модуля)
+# ✅ Глобальные переменные
 parser = TravelPayoutsParser()
 poster = ChannelPoster()
 last_post_time = None
 posts_today = 0
 last_reset_date = None
+
+# ✅ Глобальный бот для уведомлений (отдельный от poster.bot)
+admin_bot: Bot = None
+
+async def send_admin_alert(text: str, parse_mode: str = 'HTML'):
+    """
+    Отправка уведомления админу в ЛС
+    ✅ Работает даже если основной бот упал
+    """
+    global admin_bot
+    
+    admin_id = os.getenv('ADMIN_ID')
+    if not admin_id:
+        logger.warning("⚠️ ADMIN_ID не задан — уведомления отключены")
+        return
+    
+    try:
+        # Создаём отдельного бота для уведомлений (если ещё нет)
+        if admin_bot is None:
+            admin_bot = Bot(token=os.getenv('BOT_TOKEN'))
+        
+        await admin_bot.send_message(
+            chat_id=int(admin_id),
+            text=text,
+            parse_mode=parse_mode,
+            disable_web_page_preview=True
+        )
+        logger.info(f"🔔 Уведомление отправлено админу: {text[:50]}...")
+        
+    except Exception as e:
+        # ❌ Не логируем ошибку отправки уведомления, чтобы не зациклить
+        logger.warning(f"⚠️ Не удалось отправить уведомление: {e}")
 
 async def can_post() -> bool:
     """Проверка, можно ли публиковать пост"""
@@ -70,7 +107,10 @@ async def publish_deal(post_type: str = 'tour'):
             logger.info(f"✅ Опубликован {post_type} #{posts_today}")
             
     except Exception as e:
-        logger.error(f"❌ Ошибка публикации: {e}")
+        error_msg = f"❌ Ошибка публикации: {type(e).__name__}: {e}"
+        logger.error(error_msg)
+        # 🔔 Отправляем алерт админу
+        await send_admin_alert(f"❌ Ошибка публикации поста:\n<code>{error_msg}</code>")
 
 async def morning_job():
     """Утренний пост"""
@@ -121,20 +161,49 @@ async def setup_scheduler():
     
     return scheduler
 
+# ✅ Хендлер команды /test для админа
+async def cmd_test(message: Message):
+    """Тестовая публикация по команде /test"""
+    admin_id = os.getenv('ADMIN_ID')
+    if admin_id and message.from_user.id != int(admin_id):
+        await message.answer("❌ Доступ запрещён", parse_mode='HTML')
+        return
+    
+    await message.answer("🔄 Запускаю тестовую публикацию...", parse_mode='HTML')
+    try:
+        await publish_deal('tour')
+        await message.answer("✅ Готово! Проверьте канал.", parse_mode='HTML')
+    except Exception as e:
+        await message.answer(f"❌ Ошибка: <code>{e}</code>", parse_mode='HTML')
+        await send_admin_alert(f"❌ Ошибка при тесте: <code>{e}</code>")
+
 async def main():
     """Главная функция"""
-    # ✅ global в САМОМ НАЧАЛЕ функции, до любого использования!
-    global posts_today, last_reset_date, last_post_time
+    global posts_today, last_reset_date, last_post_time, admin_bot
     
+    # ✅ global в начале функции
     logger.info("🚀 Запуск авто-канала туров...")
     
     try:
+        # ✅ Инициализация бота для уведомлений
+        admin_bot = Bot(token=os.getenv('BOT_TOKEN'))
+        
+        # ✅ Отправляем уведомление о запуске
+        await send_admin_alert("✅ <b>Бот запущен!</b>\n🕐 " + datetime.now().strftime('%Y-%m-%d %H:%M:%S'))
+        
         # Проверка подключения к каналу
         chat = await poster.bot.get_chat(CHANNEL_ID)
         logger.info(f"✅ Подключен к каналу: {chat.title or CHANNEL_ID}")
         
         # Запускаем планировщик
         scheduler = await setup_scheduler()
+        
+        # ✅ Регистрируем хендлер команды /test
+        from aiogram import Router
+        test_router = Router()
+        test_router.message(Command("test"))(cmd_test)
+        # Если у вас есть основной router в poster/parser — добавьте туда
+        # Или используйте dispatcher из aiogram 3.x
         
         # Основной цикл
         while True:
@@ -149,13 +218,50 @@ async def main():
                 
     except KeyboardInterrupt:
         logger.info("⏹️ Остановка по запросу пользователя")
+        await send_admin_alert("⏹️ Бот остановлен вручную")
+        
     except Exception as e:
-        logger.error(f"❌ Критическая ошибка: {e}")
+        error_msg = f"❌ Критическая ошибка: {type(e).__name__}: {e}"
+        logger.error(error_msg)
+        logger.error(traceback.format_exc())
+        
+        # 🔔 Отправляем детальный алерт админу
+        await send_admin_alert(
+            f"❌ <b>БОТ УПАЛ!</b>\n\n"
+            f"<code>{error_msg}</code>\n\n"
+            f"📋 Stacktrace:\n"
+            f"<code>{traceback.format_exc()[:2000]}</code>"  # Обрезаем до 2000 символов
+        )
         raise
+        
     finally:
-        await parser.close()
-        await poster.close()
-        logger.info("👋 Сессии закрыты")
+        # ✅ Закрываем сессии
+        try:
+            await parser.close()
+            await poster.close()
+            if admin_bot:
+                await admin_bot.session.close()
+            logger.info("👋 Сессии закрыты")
+            await send_admin_alert("🔄 Бот перезапустился после сбоя")
+        except:
+            pass  # Игнорируем ошибки при закрытии
 
 if __name__ == "__main__":
+    # ✅ Перехват необработанных исключений
+    def handle_uncaught_exception(exc_type, exc_value, exc_traceback):
+        if issubclass(exc_type, KeyboardInterrupt):
+            return
+        error_msg = f"💥 Uncaught exception: {exc_type.__name__}: {exc_value}"
+        logger.error(error_msg)
+        logger.error(''.join(traceback.format_exception(exc_type, exc_value, exc_traceback)))
+        
+        # 🔔 Отправляем алерт даже при крахе интерпретатора
+        try:
+            asyncio.run(send_admin_alert(f"💥 <b>КРАХ БОТА!</b>\n<code>{error_msg}</code>"))
+        except:
+            pass  # На этом этапе уже ничего не поможет
+    
+    import sys
+    sys.excepthook = handle_uncaught_exception
+    
     asyncio.run(main())

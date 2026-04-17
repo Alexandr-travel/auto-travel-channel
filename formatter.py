@@ -1,5 +1,8 @@
+import logging
 from datetime import datetime
 from config import POST_SETTINGS
+
+logger = logging.getLogger(__name__)
 
 class TourFormatter:
     """Форматирование постов для канала"""
@@ -48,17 +51,14 @@ class TourFormatter:
         link = tour.get('affiliate_link', tour.get('link', '#'))
         image = tour.get('image_url', '')
         
-        # Скидка
         discount = ''
         if old_price and old_price > price:
             saved = old_price - price
             percent = int((saved / old_price) * 100)
             discount = f"\n{emojis['fire']} СКИДКА {percent}% (экономия {saved:,}₽)"
         
-        # Рейтинг
         stars = '⭐' * int(rating) if rating else ''
         
-        # Дата вылета
         if departure:
             try:
                 dep_date = datetime.fromisoformat(departure.replace('Z', '+00:00'))
@@ -68,7 +68,6 @@ class TourFormatter:
         else:
             date_str = 'Гибкие даты'
         
-        # Текст поста
         text = (
             f"{emojis['fire']} <b>ГОРЯЩИЙ ТУР: {country}</b> {emojis['fire']}\n"
             f"{'📍 ' + city + '\n' if city else ''}"
@@ -98,7 +97,6 @@ class TourFormatter:
         depart_date = flight.get('depart_date', '')
         link = flight.get('affiliate_link', flight.get('link', '#'))
         
-        # Города
         cities = {
             'MOW': 'Москва', 'LED': 'Санкт-Петербург', 'AER': 'Сочи',
             'KZN': 'Казань', 'SVX': 'Екатеринбург', 'IST': 'Стамбул',

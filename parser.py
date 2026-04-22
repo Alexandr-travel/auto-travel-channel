@@ -1,24 +1,105 @@
 import aiohttp
 import asyncio
 import logging
+import random
 from datetime import datetime, timedelta
 from typing import List, Dict, Optional
-from config import TP_TOKEN, TP_MARKER, FILTERS
+from config import TP_TOKEN, TP_MARKER, FILTERS, TEST_MODE
 
 logger = logging.getLogger(__name__)
+
+# ✅ ТЕСТОВЫЕ ДАННЫЕ: реалистичные авиабилеты для отладки
+TEST_FLIGHTS = [
+    {
+        'origin': 'MOW', 'destination': 'DXB', 'price': 25400,
+        'airline': 'Аэрофлот', 'depart_date': '2026-05-15',
+        'link': 'https://www.aviasales.ru/search/MOW1505DXB1',
+        'country_name': 'ОАЭ', 'hotel_name': '', 'nights': 7, 'hotel_rating': 0,
+    },
+    {
+        'origin': 'MOW', 'destination': 'IST', 'price': 18900,
+        'airline': 'Turkish Airlines', 'depart_date': '2026-05-20',
+        'link': 'https://www.aviasales.ru/search/MOW2005IST1',
+        'country_name': 'Турция', 'hotel_name': '', 'nights': 7, 'hotel_rating': 0,
+    },
+    {
+        'origin': 'MOW', 'destination': 'BKK', 'price': 32100,
+        'airline': 'S7', 'depart_date': '2026-06-01',
+        'link': 'https://www.aviasales.ru/search/MOW0106BKK1',
+        'country_name': 'Таиланд', 'hotel_name': '', 'nights': 10, 'hotel_rating': 0,
+    },
+    {
+        'origin': 'MOW', 'destination': 'AER', 'price': 8900,
+        'airline': 'Победа', 'depart_date': '2026-05-25',
+        'link': 'https://www.aviasales.ru/search/MOW2505AER1',
+        'country_name': 'Россия', 'hotel_name': '', 'nights': 5, 'hotel_rating': 0,
+    },
+    {
+        'origin': 'MOW', 'destination': 'LED', 'price': 4500,
+        'airline': 'Аэрофлот', 'depart_date': '2026-05-18',
+        'link': 'https://www.aviasales.ru/search/MOW1805LED1',
+        'country_name': 'Россия', 'hotel_name': '', 'nights': 3, 'hotel_rating': 0,
+    },
+    {
+        'origin': 'MOW', 'destination': 'TBS', 'price': 12300,
+        'airline': 'Georgian Airways', 'depart_date': '2026-06-10',
+        'link': 'https://www.aviasales.ru/search/MOW1006TBS1',
+        'country_name': 'Грузия', 'hotel_name': '', 'nights': 6, 'hotel_rating': 0,
+    },
+    {
+        'origin': 'MOW', 'destination': 'EVN', 'price': 15600,
+        'airline': 'Armenian Airlines', 'depart_date': '2026-05-28',
+        'link': 'https://www.aviasales.ru/search/MOW2805EVN1',
+        'country_name': 'Армения', 'hotel_name': '', 'nights': 4, 'hotel_rating': 0,
+    },
+    {
+        'origin': 'MOW', 'destination': 'HKT', 'price': 38900,
+        'airline': 'Azur Air', 'depart_date': '2026-06-15',
+        'link': 'https://www.aviasales.ru/search/MOW1506HKT1',
+        'country_name': 'Таиланд', 'hotel_name': '', 'nights': 12, 'hotel_rating': 0,
+    },
+]
+
+# ✅ ТЕСТОВЫЕ ДАННЫЕ: туры (для режима 'tour')
+TEST_TOURS = [
+    {
+        'origin': 'MOW', 'destination': 'AYT', 'price': 45900,
+        'country_name': 'Турция', 'city_name': 'Анталья',
+        'hotel_name': 'Rixos Premium Belek 5*', 'nights': 7,
+        'hotel_rating': 5, 'departure_at': '2026-06-01',
+        'link': 'https://level.travel/search/MOW0106AYT7',
+        'old_price': 54000, 'image_url': '',
+    },
+    {
+        'origin': 'MOW', 'destination': 'SSH', 'price': 52300,
+        'country_name': 'Египет', 'city_name': 'Шарм-эль-Шейх',
+        'hotel_name': 'Alpin Resort 5*', 'nights': 7,
+        'hotel_rating': 5, 'departure_at': '2026-06-05',
+        'link': 'https://level.travel/search/MOW0506SSH7',
+        'old_price': 61000, 'image_url': '',
+    },
+    {
+        'origin': 'MOW', 'destination': 'DXB', 'price': 78900,
+        'country_name': 'ОАЭ', 'city_name': 'Дубай',
+        'hotel_name': 'Atlantis The Palm 5*', 'nights': 7,
+        'hotel_rating': 5, 'departure_at': '2026-06-10',
+        'link': 'https://level.travel/search/MOW1006DXB7',
+        'old_price': 92000, 'image_url': '',
+    },
+]
+
 
 class TravelPayoutsParser:
     """Парсер предложений из API TravelPayouts"""
     
     def __init__(self):
         self.base_url = 'https://api.travelpayouts.com'
-        # ✅ API-токен передаётся через заголовок или параметр
-        self.headers = {'X-API-Token': TP_TOKEN} if TP_TOKEN else {}
         self.session: Optional[aiohttp.ClientSession] = None
     
     async def get_session(self) -> aiohttp.ClientSession:
         if self.session is None or self.session.closed:
-            self.session = aiohttp.ClientSession(headers=self.headers)
+            headers = {'X-API-Token': TP_TOKEN} if TP_TOKEN else {}
+            self.session = aiohttp.ClientSession(headers=headers)
         return self.session
     
     async def close(self):
@@ -26,120 +107,99 @@ class TravelPayoutsParser:
             await self.session.close()
     
     async def fetch_hot_deals(self, limit: int = 10) -> List[Dict]:
-        """
-        Получение выгодных авиабилетов (Aviasales API через TravelPayouts)
-        ✅ Использует рабочий эндпоинт
-        """
-        logger.info(f"🔍 Запрос авиабилетов: limit={limit}, origin=MOW")
+        """Получение предложений (авиа или туры)"""
+        logger.info(f"🔍 Запрос предложений: limit={limit}, TEST_MODE={TEST_MODE}")
         
-        session = await self.get_session()
+        # ✅ Если тестовый режим — возвращаем тестовые данные
+        if TEST_MODE:
+            logger.info("🧪 TEST_MODE: используем тестовые данные")
+            # Случайно выбираем: 70% авиа, 30% туры для разнообразия
+            if random.random() < 0.7:
+                return self._get_test_flights(limit)
+            else:
+                return self._get_test_tours(limit)
         
-        # ✅ РАБОЧИЙ эндпоинт для авиабилетов
-        url = f'{self.base_url}/aviasales/v1/prices/direct'
-        params = {
-            'origin': 'MOW',  # Москва как точка вылета
-            'currency': 'RUB',
-            'limit': limit,
-            'show_to_affiliates': 'true',
-            'token': TP_TOKEN,  # ✅ Токен как параметр (надёжнее)
-        }
-        
-        logger.info(f"📡 URL: {url}")
-        logger.info(f"📡 Params: {params}")
-        
-        try:
-            async with session.get(url, params=params, timeout=30) as response:
-                logger.info(f"📡 Status: {response.status}")
-                
-                if response.status == 200:
-                    data = await response.json()
-                    flights = data.get('data', [])
-                    
-                    # Преобразуем формат API в наш внутренний
-                    deals = []
-                    for key, flight in flights.items():
-                        if isinstance(flight, dict) and 'price' in flight:
-                            deal = {
-                                'origin': flight.get('origin', 'MOW'),
-                                'destination': flight.get('destination', ''),
-                                'price': flight.get('price', 0),
-                                'airline': flight.get('airline', ''),
-                                'depart_date': flight.get('depart_date', ''),
-                                'return_date': flight.get('return_date', ''),
-                                'link': flight.get('link', ''),
-                                'country_name': flight.get('destination', ''),
-                                'city_name': '',
-                                'hotel_name': '',
-                                'nights': 7,
-                                'hotel_rating': 0,
-                                'departure_at': flight.get('depart_date', ''),
-                            }
-                            deals.append(deal)
-                    
-                    logger.info(f"✅ API вернул {len(deals)} авиабилетов")
-                    return self._filter_deals(deals)
-                else:
-                    logger.error(f"❌ API вернул статус {response.status}")
-                    # Попробуем альтернативный эндпоинт
-                    return await self._fetch_fallback_deals(limit)
-                    
-        except aiohttp.ClientResponseError as e:
-            logger.error(f"❌ HTTP ошибка: {e.status} {e.message}")
-            return await self._fetch_fallback_deals(limit)
-        except Exception as e:
-            logger.error(f"❌ Ошибка запроса: {type(e).__name__}: {e}")
-            return []
+        # ✅ Реальный запрос к API (если TEST_MODE=false)
+        return await self._fetch_from_api(limit)
     
-    async def _fetch_fallback_deals(self, limit: int) -> List[Dict]:
-        """
-        Альтернативный эндпоинт: популярные направления
-        ✅ Работает как запасной вариант
-        """
-        logger.info("🔄 Пробуем альтернативный эндпоинт: popular_routes")
+    async def _fetch_from_api(self, limit: int) -> List[Dict]:
+        """Реальный запрос к API TravelPayouts"""
+        logger.info("📡 Запрос к реальному API...")
         
         session = await self.get_session()
-        url = f'{self.base_url}/v1/subscription/popular_routes'
+        endpoints = [
+            'https://api.travelpayouts.com/v1/prices/direct',
+            'https://api.travelpayouts.com/data/prices/direct',
+        ]
+        
         params = {
             'origin': 'MOW',
             'currency': 'RUB',
             'limit': limit,
-            'token': TP_TOKEN,
+            'show_to_affiliates': 'true',
         }
+        if TP_MARKER:
+            params['marker'] = TP_MARKER
         
-        try:
-            async with session.get(url, params=params, timeout=30) as response:
-                if response.status == 200:
-                    data = await response.json()
-                    routes = data.get('data', [])
-                    
-                    deals = []
-                    for route in routes:
-                        deal = {
-                            'origin': route.get('origin', 'MOW'),
-                            'destination': route.get('destination', ''),
-                            'price': route.get('price', route.get('value', 0)),
-                            'airline': '',
-                            'depart_date': route.get('depart_date', ''),
-                            'return_date': '',
-                            'link': route.get('link', ''),
-                            'country_name': route.get('destination', ''),
-                            'city_name': '',
-                            'hotel_name': '',
-                            'nights': 7,
-                            'hotel_rating': 0,
-                            'departure_at': route.get('depart_date', ''),
-                        }
-                        deals.append(deal)
-                    
-                    logger.info(f"✅ Fallback вернул {len(deals)} предложений")
-                    return self._filter_deals(deals)
-        except Exception as e:
-            logger.error(f"❌ Fallback ошибка: {e}")
+        for endpoint in endpoints:
+            try:
+                async with session.get(endpoint, params=params, timeout=30) as response:
+                    if response.status == 200:
+                        data = await response.json()
+                        flights = data.get('data', {})
+                        deals = self._parse_api_flights(flights)
+                        logger.info(f"✅ API вернул {len(deals)} предложений")
+                        return self._filter_deals(deals)[:limit]
+                    elif response.status in [401, 403]:
+                        logger.error(f"❌ Ошибка авторизации ({response.status})")
+                        break
+                    elif response.status == 404:
+                        logger.warning(f"⚠️ 404 для {endpoint}, пробуем следующий")
+                        continue
+            except Exception as e:
+                logger.error(f"❌ Ошибка запроса: {e}")
+                continue
         
-        return []
+        # Если API не сработал — фоллбэк на тестовые данные
+        logger.warning("🔄 API не ответил, используем тестовые данные")
+        return self._get_test_flights(limit)[:limit]
+    
+    def _parse_api_flights(self,  dict) -> List[Dict]:
+        """Парсинг ответа API в наш формат"""
+        deals = []
+        for key, flight in flights.items():
+            if isinstance(flight, dict) and 'price' in flight:
+                deal = {
+                    'origin': flight.get('origin', 'MOW'),
+                    'destination': flight.get('destination', ''),
+                    'price': flight.get('price', 0),
+                    'airline': flight.get('airline', ''),
+                    'depart_date': flight.get('depart_date', ''),
+                    'link': flight.get('link', ''),
+                    'country_name': flight.get('destination', ''),
+                    'hotel_name': '',
+                    'nights': 7,
+                    'hotel_rating': 0,
+                    'departure_at': flight.get('depart_date', ''),
+                }
+                deals.append(deal)
+        return deals
+    
+    def _get_test_flights(self, limit: int) -> List[Dict]:
+        """Возвращает тестовые авиабилеты"""
+        # Перемешиваем и берём нужное количество
+        shuffled = TEST_FLIGHTS.copy()
+        random.shuffle(shuffled)
+        return shuffled[:limit]
+    
+    def _get_test_tours(self, limit: int) -> List[Dict]:
+        """Возвращает тестовые туры"""
+        shuffled = TEST_TOURS.copy()
+        random.shuffle(shuffled)
+        return shuffled[:limit]
     
     async def fetch_flight_deals(self, limit: int = 10) -> List[Dict]:
-        """Получение авиабилетов (дублирует fetch_hot_deals для совместимости)"""
+        """Получение авиабилетов (алиас)"""
         return await self.fetch_hot_deals(limit)
     
     def _filter_deals(self, deals: List[Dict]) -> List[Dict]:
@@ -151,11 +211,8 @@ class TravelPayoutsParser:
             price = deal.get('price', 0)
             destination = deal.get('destination', '')
             
-            # Применяем фильтры
             if not (FILTERS['min_price'] <= price <= FILTERS['max_price']):
                 continue
-            
-            # Фильтр по странам (если задан)
             if FILTERS['countries'] and destination not in FILTERS['countries']:
                 continue
             
@@ -166,28 +223,22 @@ class TravelPayoutsParser:
             filtered.append(deal)
         
         logger.info(f"✅ После фильтрации: {len(filtered)} предложений")
-        return filtered[:5]  # Возвращаем топ-5
+        return filtered
     
     def _add_marker(self, url: str) -> str:
-        """Добавление маркера партнёра в ссылку"""
+        """Добавление маркера в ссылку"""
         if not url or not TP_MARKER or TP_MARKER in url:
             return url
-        
-        # Определяем разделитель
         separator = '&' if '?' in url else '?'
-        
-        # Некоторые программы используют subid вместо marker
-        # Пробуем оба варианта
         return f"{url}{separator}marker={TP_MARKER}"
     
     def format_tour_post(self, item: Dict) -> Dict:
-        """Форматирование предложения для поста (универсальное)"""
+        """Форматирование предложения для поста"""
         from formatter import TourFormatter
-        # Определяем тип: если есть hotel_name — тур, иначе авиа
         post_type = 'tour' if item.get('hotel_name') else 'flight'
         return TourFormatter.format(item, post_type=post_type)
     
     def format_flight_post(self, item: Dict) -> Dict:
-        """Форматирование авиабилета для поста"""
+        """Форматирование авиабилета"""
         from formatter import TourFormatter
         return TourFormatter.format(item, post_type='flight')

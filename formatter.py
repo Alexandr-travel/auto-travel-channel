@@ -18,19 +18,13 @@ class TourFormatter:
             'price': '💸', 'date': '🗓️', 'link': '👉',
             'fire': '🔥🔥', 'new': '🆕', 'top': '👑'
         },
-        'minimal': {
-            'tour': '', 'flight': '', 'hotel': '',
-            'price': '', 'date': '', 'link': '',
-            'fire': '', 'new': '', 'top': ''
-        }
+        'minimal': {'tour': '', 'flight': '', 'hotel': '', 'price': '', 'date': '', 'link': '', 'fire': '', 'new': '', 'top': ''}
     }
     
     @staticmethod
     def format(item: dict, post_type: str = 'tour') -> dict:
-        """Основной метод форматирования"""
         style = POST_SETTINGS.get('emoji_style', 'travel')
         emojis = TourFormatter.EMOJIS.get(style, TourFormatter.EMOJIS['travel'])
-        
         if post_type == 'tour':
             return TourFormatter._format_tour(item, emojis)
         elif post_type == 'flight':
@@ -39,7 +33,6 @@ class TourFormatter:
     
     @staticmethod
     def _format_tour(tour: dict, emojis: dict) -> dict:
-        """Форматирование тура"""
         country = tour.get('country_name', 'Неизвестно')
         city = tour.get('city_name', '')
         hotel = tour.get('hotel_name', 'Отель')
@@ -49,7 +42,6 @@ class TourFormatter:
         rating = tour.get('hotel_rating', 0)
         departure = tour.get('departure_at', '')
         link = tour.get('affiliate_link', tour.get('link', '#'))
-        image = tour.get('image_url', '')
         
         discount = ''
         if old_price and old_price > price:
@@ -58,15 +50,7 @@ class TourFormatter:
             discount = f"\n{emojis['fire']} СКИДКА {percent}% (экономия {saved:,}₽)"
         
         stars = '⭐' * int(rating) if rating else ''
-        
-        if departure:
-            try:
-                dep_date = datetime.fromisoformat(departure.replace('Z', '+00:00'))
-                date_str = dep_date.strftime('%d.%m.%Y')
-            except:
-                date_str = departure[:10]
-        else:
-            date_str = 'Гибкие даты'
+        date_str = departure[:10] if departure else 'Гибкие даты'
         
         text = (
             f"{emojis['fire']} <b>ГОРЯЩИЙ ТУР: {country}</b> {emojis['fire']}\n"
@@ -79,17 +63,10 @@ class TourFormatter:
             f"\n{emojis['link']} <a href='{link}'>Забронировать тур</a>\n"
             f"\n<i>Цены актуальны на момент публикации. Партнёр @TravelPayouts</i>"
         )
-        
-        return {
-            'text': text,
-            'image': image if POST_SETTINGS['include_image'] and image else None,
-            'link': link,
-            'parse_mode': 'HTML'
-        }
+        return {'text': text, 'image': None, 'link': link, 'parse_mode': 'HTML'}
     
     @staticmethod
     def _format_flight(flight: dict, emojis: dict) -> dict:
-        """Форматирование авиабилета"""
         origin = flight.get('origin', 'MOW')
         destination = flight.get('destination', '?')
         price = flight.get('price', 0)
@@ -97,11 +74,7 @@ class TourFormatter:
         depart_date = flight.get('depart_date', '')
         link = flight.get('affiliate_link', flight.get('link', '#'))
         
-        cities = {
-            'MOW': 'Москва', 'LED': 'Санкт-Петербург', 'AER': 'Сочи',
-            'KZN': 'Казань', 'SVX': 'Екатеринбург', 'IST': 'Стамбул',
-            'DXB': 'Дубай', 'BKK': 'Бангкок', 'HKT': 'Пхукет'
-        }
+        cities = {'MOW': 'Москва', 'LED': 'Санкт-Петербург', 'AER': 'Сочи', 'IST': 'Стамбул', 'DXB': 'Дубай', 'BKK': 'Бангкок', 'HKT': 'Пхукет', 'TBS': 'Тбилиси', 'EVN': 'Ереван', 'AYT': 'Анталья', 'SSH': 'Шарм-эль-Шейх'}
         from_city = cities.get(origin, origin)
         to_city = cities.get(destination, destination)
         
@@ -114,18 +87,4 @@ class TourFormatter:
             f"\n{emojis['link']} <a href='{link}'>Найти билеты</a>\n"
             f"\n<i>Цены могут измениться. Партнёр @Aviasales</i>"
         )
-        
-        return {
-            'text': text,
-            'image': None,
-            'link': link,
-            'parse_mode': 'HTML'
-        }
-    
-    @staticmethod
-    def add_hashtags(text: str, tags: list) -> str:
-        """Добавление хэштегов"""
-        if not tags:
-            return text
-        hashtags = ' '.join(f'#{tag}' for tag in tags)
-        return f"{text}\n\n{hashtags}"
+        return {'text': text, 'image': None, 'link': link, 'parse_mode': 'HTML'}

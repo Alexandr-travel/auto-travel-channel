@@ -6,7 +6,7 @@ from datetime import datetime, date
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 
-from aiogram import Bot, Router
+from aiogram import Bot, Dispatcher, Router
 from aiogram.types import Message
 from aiogram.filters import Command
 
@@ -28,6 +28,10 @@ last_post_time = None
 posts_today = 0
 last_reset_date = None
 admin_bot: Bot = None
+
+# ✅ Создаём диспетчер и роутеры
+dp = Dispatcher()
+test_router = Router()
 
 async def send_admin_alert(text: str, parse_mode: str = 'HTML'):
     """Отправка уведомления админу в ЛС"""
@@ -121,12 +125,17 @@ async def setup_scheduler():
         logger.info(f"   • {job.name}: {job.next_run_time}")
     return scheduler
 
+# ✅ Хендлер команды /test — регистрируется через декоратор
+@test_router.message(Command("test"))
 async def cmd_test(message: Message):
     """Тестовая публикация по команде /test"""
     admin_id = os.getenv('ADMIN_ID')
-    if admin_id and message.from_user.id != int(admin_id):
-        await message.answer("❌ Доступ запрещён", parse_mode='HTML')
-        return
+    
+    # ✅ Если ADMIN_ID не задан — разрешаем всем (для теста)
+    if admin_id:
+        if message.from_user.id != int(admin_id):
+            await message.answer("❌ Доступ запрещён", parse_mode='HTML')
+            return
     
     await message.answer("🔄 Запускаю тестовую публикацию...", parse_mode='HTML')
     try:
@@ -134,6 +143,7 @@ async def cmd_test(message: Message):
         await message.answer("✅ Готово! Проверьте канал.", parse_mode='HTML')
     except Exception as e:
         await message.answer(f"❌ Ошибка: <code>{e}</code>", parse_mode='HTML')
+        await send_admin_alert(f"❌ Ошибка при тесте: <code>{e}</code>")
 
 async def main():
     """Главная функция"""
@@ -149,20 +159,15 @@ async def main():
         chat = await poster.bot.get_chat(CHANNEL_ID)
         logger.info(f"✅ Подключен к каналу: {chat.title or CHANNEL_ID}")
         
+        # ✅ ВКЛЮЧАЕМ тестовый роутер в диспетчер
+        dp.include_router(test_router)
+        logger.info("✅ Хендлер /test зарегистрирован")
+        
         scheduler = await setup_scheduler()
         
-        # Регистрируем хендлер /test
-        test_router = Router()
-        test_router.message(Command("test"))(cmd_test)
-        # Если используете основной dispatcher — добавьте тест-роутер туда
-        
-        while True:
-            await asyncio.sleep(60)
-            today = datetime.now().date()
-            if today != last_reset_date and datetime.now().hour == 0:
-                posts_today = 0
-                last_reset_date = today
-                logger.info(f"🔄 Счётчик постов сброшен ({today})")
+        # ✅ Запускаем polling с диспетчером
+        logger.info("📡 Запуск polling...")
+        await dp.start_polling(poster.bot)
                 
     except KeyboardInterrupt:
         logger.info("⏹️ Остановка по запросу")

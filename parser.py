@@ -164,8 +164,9 @@ class TravelPayoutsParser:
         logger.warning("🔄 API не ответил, используем тестовые данные")
         return self._get_test_flights(limit)[:limit]
     
-    def _parse_api_flights(self,  dict) -> List[Dict]:
+    def _parse_api_flights(self, data: dict) -> List[Dict]:
         """Парсинг ответа API в наш формат"""
+        flights = data if isinstance(data, dict) else {}
         deals = []
         for key, flight in flights.items():
             if isinstance(flight, dict) and 'price' in flight:
@@ -186,16 +187,27 @@ class TravelPayoutsParser:
         return deals
     
     def _get_test_flights(self, limit: int) -> List[Dict]:
-        """Возвращает тестовые авиабилеты"""
-        # Перемешиваем и берём нужное количество
+        """Возвращает тестовые авиабилеты С МАРКЕРОМ"""
         shuffled = TEST_FLIGHTS.copy()
         random.shuffle(shuffled)
+        
+        # ✅ Добавляем маркер в каждую ссылку
+        for flight in shuffled:
+            if flight.get('link'):
+                flight['affiliate_link'] = self._add_marker(flight['link'])
+        
         return shuffled[:limit]
     
     def _get_test_tours(self, limit: int) -> List[Dict]:
-        """Возвращает тестовые туры"""
+        """Возвращает тестовые туры С МАРКЕРОМ"""
         shuffled = TEST_TOURS.copy()
         random.shuffle(shuffled)
+        
+        # ✅ Добавляем маркер в каждую ссылку
+        for tour in shuffled:
+            if tour.get('link'):
+                tour['affiliate_link'] = self._add_marker(tour['link'])
+        
         return shuffled[:limit]
     
     async def fetch_flight_deals(self, limit: int = 10) -> List[Dict]:
@@ -216,9 +228,12 @@ class TravelPayoutsParser:
             if FILTERS['countries'] and destination not in FILTERS['countries']:
                 continue
             
-            # Добавляем маркер в ссылку
+            # ✅ Гарантируем наличие affiliate_link с маркером
             if deal.get('link'):
-                deal['affiliate_link'] = self._add_marker(deal['link'])
+                if not deal.get('affiliate_link'):
+                    deal['affiliate_link'] = self._add_marker(deal['link'])
+                elif TP_MARKER and TP_MARKER not in deal['affiliate_link']:
+                    deal['affiliate_link'] = self._add_marker(deal['affiliate_link'])
             
             filtered.append(deal)
         

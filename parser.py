@@ -9,7 +9,7 @@ from config import TP_TOKEN, TP_MARKER, FILTERS, TEST_MODE, TP_PARTNER_ID
 
 logger = logging.getLogger(__name__)
 
-# ✅ ТЕСТОВЫЕ ДАННЫЕ: авиабилеты (базовые ссылки, маркер добавится автоматически)
+# ✅ ТЕСТОВЫЕ ДАННЫЕ: авиабилеты
 TEST_FLIGHTS = [
     {
         'origin': 'MOW', 'destination': 'DXB', 'price': 25400,
@@ -108,7 +108,7 @@ class TravelPayoutsParser:
             await self.session.close()
     
     async def fetch_hot_deals(self, limit: int = 10) -> List[Dict]:
-        """Получение предложений (авиа или туры)"""
+        """Получение предложений"""
         logger.info(f"🔍 Запрос предложений: limit={limit}, TEST_MODE={TEST_MODE}")
         
         if TEST_MODE:
@@ -121,8 +121,12 @@ class TravelPayoutsParser:
         return await self._fetch_from_api(limit)
     
     async def _fetch_from_api(self, limit: int) -> List[Dict]:
-        """Реальный запрос к API TravelPayouts"""
+        """Реальный запрос к API"""
         logger.info("📡 Запрос к реальному API...")
+        
+        if not TP_TOKEN:
+            logger.error("❌ TP_TOKEN не задан!")
+            return self._get_test_flights(limit)
         
         session = await self.get_session()
         endpoints = [
@@ -136,24 +140,29 @@ class TravelPayoutsParser:
             'limit': limit,
             'show_to_affiliates': 'true',
         }
-        if TP_MARKER:
-            params['marker'] = TP_MARKER
         
         for endpoint in endpoints:
             try:
-                async with session.get(endpoint, params=params, timeout=30) as response:
+                # ✅ Токен передаём ТОЛЬКО в заголовке
+                headers = {'X-API-Token': TP_TOKEN}
+                async with session.get(endpoint, params=params, headers=headers, timeout=30) as response:
+                    logger.info(f"📡 {endpoint} → Status: {response.status}")
+                    
                     if response.status == 200:
                         data = await response.json()
                         flights = data.get('data', {})
                         deals = self._parse_api_flights(flights)
                         logger.info(f"✅ API вернул {len(deals)} предложений")
                         return self._filter_deals(deals)[:limit]
+                    
                     elif response.status in [401, 403]:
-                        logger.error(f"❌ Ошибка авторизации ({response.status})")
+                        logger.error(f"❌ Ошибка авторизации ({response.status}): проверьте токен и активацию программ")
                         break
+                    
                     elif response.status == 404:
                         logger.warning(f"⚠️ 404 для {endpoint}")
                         continue
+                        
             except Exception as e:
                 logger.error(f"❌ Ошибка запроса: {e}")
                 continue
@@ -161,7 +170,7 @@ class TravelPayoutsParser:
         logger.warning("🔄 API не ответил, используем тестовые данные")
         return self._get_test_flights(limit)[:limit]
     
-    def _parse_api_flights(self, data: dict) -> List[Dict]:
+    def _parse_api_flights(self,  dict) -> List[Dict]:
         """Парсинг ответа API"""
         flights = data if isinstance(data, dict) else {}
         deals = []
@@ -218,7 +227,6 @@ class TravelPayoutsParser:
             if FILTERS['countries'] and destination not in FILTERS['countries']:
                 continue
             
-            # Гарантируем наличие affiliate_link с трекером
             if deal.get('link') and not deal.get('affiliate_link'):
                 deal['affiliate_link'] = self._add_tracker_link(deal['link'])
             
@@ -229,30 +237,33 @@ class TravelPayoutsParser:
     
     def _add_tracker_link(self, url: str) -> str:
         """
-        ✅ СОЗДАЁТ ПРАВИЛЬНУЮ ТРЕК-ССЫЛКУ TRAVELPAYOUTS
-        Формат: https://tp.media/click?sh=PARTNER_ID&subid=MARKER&u=ENCODED_URL
+        ✅ СОЗДАЁТ ПРАВИЛЬНУЮ ТРЕК-ССЫЛКУ С ПОЛНЫМ КОДИРОВАНИЕМ
+        Формат: https://tp.media/click?sh=PARTNER_ID&subid=MARKER&u=FULLY_ENCODED_URL
         """
         if not url:
             return url
         
-        # ✅ Ваш партнёрский ID (из config.py)
         partner_id = TP_PARTNER_ID
+        if not partner_id:
+            logger.error("❌ TP_PARTNER_ID не задан!")
+            return url
         
-        # Маркер источника (для детализации статистики)
-        subid = TP_MARKER if TP_MARKER else 'telegram_auto'
+        # ✅ Используем короткий маркер (не токен!)
+        # Если TP_MARKER слишком длинный (>20 символов) — используем дефолтный
+        raw_subid = TP_MARKER if TP_MARKER else 'telegram_auto'
+        subid = raw_subid if len(raw_subid) <= 20 else 'telegram_auto'
         
-        # Кодируем целевую ссылку
-        encoded_url = urllib.parse.quote(url, safe=':/?&=')
+        if len(raw_subid) > 20:
+            logger.warning(f"⚠️ TP_MARKER слишком длинный ({len(raw_subid)} симв.), используем 'telegram_auto'")
+        
+        # ✅ ПОЛНОЕ кодирование целевой ссылки (все спецсимволы)
+        encoded_url = urllib.parse.quote(url, safe='')
         
         # Формируем трек-ссылку
         tracker_url = f"https://tp.media/click?sh={partner_id}&subid={subid}&u={encoded_url}"
         
-        logger.debug(f"🔗 Трек-ссылка: {tracker_url[:100]}...")
+        logger.debug(f"🔗 Трек-ссылка: {tracker_url[:120]}...")
         return tracker_url
-    
-    def _add_marker(self, url: str) -> str:
-        """Устаревшая функция — используйте _add_tracker_link()"""
-        return self._add_tracker_link(url)
     
     def format_tour_post(self, item: Dict) -> Dict:
         from formatter import TourFormatter

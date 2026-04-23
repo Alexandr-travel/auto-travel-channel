@@ -13,6 +13,10 @@ ADMIN_ID = os.getenv('ADMIN_ID')
 TP_TOKEN = os.getenv('TRAVELPAYOUTS_API_KEY')
 TP_MARKER = os.getenv('TP_MARKER', '')
 
+# ✅ Ваш партнёрский ID в TravelPayouts (ОБЯЗАТЕЛЬНО замените на актуальный!)
+# Найдите его в кабинете: app.travelpayouts.com → профиль или настройки
+TP_PARTNER_ID = os.getenv('TP_PARTNER_ID', '713263')
+
 # ✅ Проверка критичных переменных
 if not BOT_TOKEN:
     raise ValueError("❌ BOT_TOKEN не найден! Добавьте переменную в Railway Variables")
@@ -20,22 +24,23 @@ if not BOT_TOKEN:
 if not CHANNEL_ID:
     raise ValueError("❌ CHANNEL_ID не найден! Добавьте переменную в Railway Variables")
 
+if not TP_PARTNER_ID:
+    raise ValueError("❌ TP_PARTNER_ID не найден! Добавьте ваш ID партнёра в Variables")
+
 # ✅ ТЕСТОВЫЙ РЕЖИМ: используйте тестовые данные вместо реального API
-# Установите TEST_MODE=true в Railway Variables для включения
 TEST_MODE = os.getenv('TEST_MODE', 'false').lower() == 'true'
 
-# ✅ Фильтры предложений (работают и в тестовом режиме)
+# ✅ Фильтры предложений
 FILTERS = {
-    'min_price': 5000,       # Минимальная цена (₽)
-    'max_price': 300000,     # Максимальная цена (₽)
-    'countries': [],         # Пустой список = ВСЕ направления
-    'min_rating': 0,         # Любой рейтинг
-    'nights_min': 2,         # Минимум ночей
-    'nights_max': 30,        # Максимум ночей
+    'min_price': 5000,
+    'max_price': 300000,
+    'countries': [],
+    'min_rating': 0,
+    'nights_min': 2,
+    'nights_max': 30,
 }
 
-# ✅ Расписание постинга (по UTC, Railway использует UTC)
-# МСК = UTC + 3 часа
+# ✅ Расписание постинга (по UTC)
 SCHEDULE = {
     'morning': {'hour': 6, 'minute': 0},    # 09:00 МСК
     'evening': {'hour': 16, 'minute': 30},  # 19:30 МСК
@@ -44,10 +49,10 @@ SCHEDULE = {
 
 # Настройки постов
 POST_SETTINGS = {
-    'max_posts_per_day': 4,      # Лимит постов в день
-    'min_hours_between': 3,      # Минимум часов между постами
-    'include_image': False,       # Картинки (False = стабильнее)
-    'emoji_style': 'travel',      # 'travel' | 'fire' | 'minimal'
+    'max_posts_per_day': 4,
+    'min_hours_between': 3,
+    'include_image': False,
+    'emoji_style': 'travel',
 }
 
 # Логирование

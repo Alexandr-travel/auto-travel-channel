@@ -10,7 +10,7 @@ from aiogram import Bot, Dispatcher, Router
 from aiogram.types import Message
 from aiogram.filters import Command
 
-from config import SCHEDULE, POST_SETTINGS, LOG_LEVEL, CHANNEL_ID, FILTERS, TEST_MODE
+from config import SCHEDULE, POST_SETTINGS, LOG_LEVEL, CHANNEL_ID, FILTERS, TEST_MODE, TP_PARTNER_ID, TP_MARKER
 from parser import TravelPayoutsParser
 from poster import ChannelPoster
 
@@ -149,13 +149,28 @@ async def main():
     """Главная функция"""
     global posts_today, last_reset_date, last_post_time, admin_bot
     
+    # ✅ Логирование запуска с полной информацией
     logger.info("🚀 Запуск авто-канала туров...")
     logger.info(f"🧪 TEST_MODE: {TEST_MODE}")
+    logger.info(f"🔑 TP_PARTNER_ID: {TP_PARTNER_ID}")  # ✅ Ваш партнёрский ID
+    logger.info(f"🏷️  TP_MARKER: {TP_MARKER}")  # ✅ Ваш маркер источника
+    logger.info(f"📺 CHANNEL_ID: {CHANNEL_ID}")
     
     try:
+        # ✅ Инициализация бота для уведомлений
         admin_bot = Bot(token=os.getenv('BOT_TOKEN'))
-        await send_admin_alert("✅ <b>Бот запущен!</b>\n🕐 " + datetime.now().strftime('%Y-%m-%d %H:%M:%S') + f"\n🧪 TEST_MODE: {TEST_MODE}")
         
+        # ✅ Отправляем уведомление о запуске с полной информацией
+        startup_info = (
+            f"✅ <b>Бот запущен!</b>\n"
+            f"🕐 {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
+            f"🧪 TEST_MODE: {TEST_MODE}\n"
+            f"🔑 Partner ID: {TP_PARTNER_ID}\n"
+            f"🏷️  Marker: {TP_MARKER}"
+        )
+        await send_admin_alert(startup_info)
+        
+        # Проверка подключения к каналу
         chat = await poster.bot.get_chat(CHANNEL_ID)
         logger.info(f"✅ Подключен к каналу: {chat.title or CHANNEL_ID}")
         
@@ -163,6 +178,7 @@ async def main():
         dp.include_router(test_router)
         logger.info("✅ Хендлер /test зарегистрирован")
         
+        # Запускаем планировщик
         scheduler = await setup_scheduler()
         
         # ✅ Запускаем polling с диспетчером
@@ -176,7 +192,7 @@ async def main():
         error_msg = f"❌ Критическая ошибка: {type(e).__name__}: {e}"
         logger.error(error_msg)
         logger.error(traceback.format_exc())
-        await send_admin_alert(f"❌ <b>БОТ УПАЛ!</b>\n\n<code>{error_msg}</code>")
+        await send_admin_alert(f"❌ <b>БОТ УПАЛ!</b>\n\n<code>{error_msg}</code>\n\n<code>{traceback.format_exc()[:1000]}</code>")
         raise
     finally:
         try:
@@ -189,6 +205,7 @@ async def main():
             pass
 
 if __name__ == "__main__":
+    # ✅ Перехват необработанных исключений
     def handle_uncaught_exception(exc_type, exc_value, exc_traceback):
         if issubclass(exc_type, KeyboardInterrupt):
             return

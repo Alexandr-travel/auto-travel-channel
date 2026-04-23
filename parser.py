@@ -2,13 +2,14 @@ import aiohttp
 import asyncio
 import logging
 import random
-from datetime import datetime, timedelta
+import urllib.parse
+from datetime import datetime
 from typing import List, Dict, Optional
-from config import TP_TOKEN, TP_MARKER, FILTERS, TEST_MODE
+from config import TP_TOKEN, TP_MARKER, FILTERS, TEST_MODE, TP_PARTNER_ID
 
 logger = logging.getLogger(__name__)
 
-# ✅ ТЕСТОВЫЕ ДАННЫЕ: реалистичные авиабилеты для отладки
+# ✅ ТЕСТОВЫЕ ДАННЫЕ: авиабилеты (базовые ссылки, маркер добавится автоматически)
 TEST_FLIGHTS = [
     {
         'origin': 'MOW', 'destination': 'DXB', 'price': 25400,
@@ -60,7 +61,7 @@ TEST_FLIGHTS = [
     },
 ]
 
-# ✅ ТЕСТОВЫЕ ДАННЫЕ: туры (для режима 'tour')
+# ✅ ТЕСТОВЫЕ ДАННЫЕ: туры
 TEST_TOURS = [
     {
         'origin': 'MOW', 'destination': 'AYT', 'price': 45900,
@@ -110,16 +111,13 @@ class TravelPayoutsParser:
         """Получение предложений (авиа или туры)"""
         logger.info(f"🔍 Запрос предложений: limit={limit}, TEST_MODE={TEST_MODE}")
         
-        # ✅ Если тестовый режим — возвращаем тестовые данные
         if TEST_MODE:
             logger.info("🧪 TEST_MODE: используем тестовые данные")
-            # Случайно выбираем: 70% авиа, 30% туры для разнообразия
             if random.random() < 0.7:
                 return self._get_test_flights(limit)
             else:
                 return self._get_test_tours(limit)
         
-        # ✅ Реальный запрос к API (если TEST_MODE=false)
         return await self._fetch_from_api(limit)
     
     async def _fetch_from_api(self, limit: int) -> List[Dict]:
@@ -154,18 +152,17 @@ class TravelPayoutsParser:
                         logger.error(f"❌ Ошибка авторизации ({response.status})")
                         break
                     elif response.status == 404:
-                        logger.warning(f"⚠️ 404 для {endpoint}, пробуем следующий")
+                        logger.warning(f"⚠️ 404 для {endpoint}")
                         continue
             except Exception as e:
                 logger.error(f"❌ Ошибка запроса: {e}")
                 continue
         
-        # Если API не сработал — фоллбэк на тестовые данные
         logger.warning("🔄 API не ответил, используем тестовые данные")
         return self._get_test_flights(limit)[:limit]
     
     def _parse_api_flights(self, data: dict) -> List[Dict]:
-        """Парсинг ответа API в наш формат"""
+        """Парсинг ответа API"""
         flights = data if isinstance(data, dict) else {}
         deals = []
         for key, flight in flights.items():
@@ -187,35 +184,28 @@ class TravelPayoutsParser:
         return deals
     
     def _get_test_flights(self, limit: int) -> List[Dict]:
-        """Возвращает тестовые авиабилеты С МАРКЕРОМ"""
+        """Тестовые авиабилеты С ТРЕК-ССЫЛКАМИ"""
         shuffled = TEST_FLIGHTS.copy()
         random.shuffle(shuffled)
-        
-        # ✅ Добавляем маркер в каждую ссылку
         for flight in shuffled:
             if flight.get('link'):
-                flight['affiliate_link'] = self._add_marker(flight['link'])
-        
+                flight['affiliate_link'] = self._add_tracker_link(flight['link'])
         return shuffled[:limit]
     
     def _get_test_tours(self, limit: int) -> List[Dict]:
-        """Возвращает тестовые туры С МАРКЕРОМ"""
+        """Тестовые туры С ТРЕК-ССЫЛКАМИ"""
         shuffled = TEST_TOURS.copy()
         random.shuffle(shuffled)
-        
-        # ✅ Добавляем маркер в каждую ссылку
         for tour in shuffled:
             if tour.get('link'):
-                tour['affiliate_link'] = self._add_marker(tour['link'])
-        
+                tour['affiliate_link'] = self._add_tracker_link(tour['link'])
         return shuffled[:limit]
     
     async def fetch_flight_deals(self, limit: int = 10) -> List[Dict]:
-        """Получение авиабилетов (алиас)"""
         return await self.fetch_hot_deals(limit)
     
     def _filter_deals(self, deals: List[Dict]) -> List[Dict]:
-        """Фильтрация предложений по настройкам"""
+        """Фильтрация предложений"""
         logger.info(f"🔎 Фильтрация {len(deals)} предложений...")
         filtered = []
         
@@ -228,32 +218,47 @@ class TravelPayoutsParser:
             if FILTERS['countries'] and destination not in FILTERS['countries']:
                 continue
             
-            # ✅ Гарантируем наличие affiliate_link с маркером
-            if deal.get('link'):
-                if not deal.get('affiliate_link'):
-                    deal['affiliate_link'] = self._add_marker(deal['link'])
-                elif TP_MARKER and TP_MARKER not in deal['affiliate_link']:
-                    deal['affiliate_link'] = self._add_marker(deal['affiliate_link'])
+            # Гарантируем наличие affiliate_link с трекером
+            if deal.get('link') and not deal.get('affiliate_link'):
+                deal['affiliate_link'] = self._add_tracker_link(deal['link'])
             
             filtered.append(deal)
         
         logger.info(f"✅ После фильтрации: {len(filtered)} предложений")
         return filtered
     
-    def _add_marker(self, url: str) -> str:
-        """Добавление маркера в ссылку"""
-        if not url or not TP_MARKER or TP_MARKER in url:
+    def _add_tracker_link(self, url: str) -> str:
+        """
+        ✅ СОЗДАЁТ ПРАВИЛЬНУЮ ТРЕК-ССЫЛКУ TRAVELPAYOUTS
+        Формат: https://tp.media/click?sh=PARTNER_ID&subid=MARKER&u=ENCODED_URL
+        """
+        if not url:
             return url
-        separator = '&' if '?' in url else '?'
-        return f"{url}{separator}marker={TP_MARKER}"
+        
+        # ✅ Ваш партнёрский ID (из config.py)
+        partner_id = TP_PARTNER_ID
+        
+        # Маркер источника (для детализации статистики)
+        subid = TP_MARKER if TP_MARKER else 'telegram_auto'
+        
+        # Кодируем целевую ссылку
+        encoded_url = urllib.parse.quote(url, safe=':/?&=')
+        
+        # Формируем трек-ссылку
+        tracker_url = f"https://tp.media/click?sh={partner_id}&subid={subid}&u={encoded_url}"
+        
+        logger.debug(f"🔗 Трек-ссылка: {tracker_url[:100]}...")
+        return tracker_url
+    
+    def _add_marker(self, url: str) -> str:
+        """Устаревшая функция — используйте _add_tracker_link()"""
+        return self._add_tracker_link(url)
     
     def format_tour_post(self, item: Dict) -> Dict:
-        """Форматирование предложения для поста"""
         from formatter import TourFormatter
         post_type = 'tour' if item.get('hotel_name') else 'flight'
         return TourFormatter.format(item, post_type=post_type)
     
     def format_flight_post(self, item: Dict) -> Dict:
-        """Форматирование авиабилета"""
         from formatter import TourFormatter
         return TourFormatter.format(item, post_type='flight')

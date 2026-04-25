@@ -4,87 +4,173 @@ from config import POST_SETTINGS
 
 logger = logging.getLogger(__name__)
 
-class TourFormatter:
-    """Форматирование постов для канала"""
-    
-    EMOJIS = {
-        'travel': {
-            'tour': '🏖️', 'flight': '✈️', 'hotel': '🏨', 
-            'price': '💰', 'date': '📅', 'link': '🔗',
-            'fire': '🔥', 'new': '✨', 'top': '🏆'
-        },
-        'fire': {
-            'tour': '🔥', 'flight': '⚡', 'hotel': '🏨',
-            'price': '💸', 'date': '🗓️', 'link': '👉',
-            'fire': '🔥🔥', 'new': '🆕', 'top': '👑'
-        },
-        'minimal': {'tour': '', 'flight': '', 'hotel': '', 'price': '', 'date': '', 'link': '', 'fire': '', 'new': '', 'top': ''}
+# ✅ Названия городов для отображения
+CITY_NAMES = {
+    'MOW': 'Москва',
+    'LED': 'Санкт-Петербург',
+    'SVX': 'Екатеринбург',
+    'KZN': 'Казань',
+    'DXB': 'Дубай',
+    'IST': 'Стамбул',
+    'BKK': 'Бангкок',
+    'HKT': 'Пхукет',
+    'AER': 'Сочи',
+    'TBS': 'Тбилиси',
+    'EVN': 'Ереван',
+    'GOA': 'Гоа',
+    'AYT': 'Анталья',
+    'SSH': 'Шарм-эль-Шейх',
+}
+
+# ✅ Эмодзи для разных стилей
+EMOJIS = {
+    'flight': {
+        'flight': '✈️',
+        'price': '💰',
+        'date': '📅',
+        'link': '🔗',
+        'fire': '🔥',
+        'new': '✨',
+        'top': '🏆',
+        'arrow': '➡️'
+    },
+    'fire': {
+        'flight': '🔥',
+        'price': '💸',
+        'date': '🗓️',
+        'link': '👉',
+        'fire': '🔥🔥',
+        'new': '🆕',
+        'top': '👑',
+        'arrow': '➡️'
+    },
+    'minimal': {
+        'flight': '',
+        'price': '',
+        'date': '',
+        'link': '',
+        'fire': '',
+        'new': '',
+        'top': '',
+        'arrow': '→'
     }
+}
+
+
+class FlightFormatter:
+    """Форматирование постов с авиабилетами для Telegram канала"""
     
     @staticmethod
-    def format(item: dict, post_type: str = 'tour') -> dict:
-        style = POST_SETTINGS.get('emoji_style', 'travel')
-        emojis = TourFormatter.EMOJIS.get(style, TourFormatter.EMOJIS['travel'])
-        if post_type == 'tour':
-            return TourFormatter._format_tour(item, emojis)
-        elif post_type == 'flight':
-            return TourFormatter._format_flight(item, emojis)
-        return {}
-    
-    @staticmethod
-    def _format_tour(tour: dict, emojis: dict) -> dict:
-        country = tour.get('country_name', 'Неизвестно')
-        city = tour.get('city_name', '')
-        hotel = tour.get('hotel_name', 'Отель')
-        price = tour.get('price', 0)
-        old_price = tour.get('old_price', 0)
-        nights = tour.get('nights', 7)
-        rating = tour.get('hotel_rating', 0)
-        departure = tour.get('departure_at', '')
-        link = tour.get('affiliate_link', tour.get('link', '#'))
+    def format(flight: dict) -> dict:
+        """
+        Основной метод форматирования авиабилета
         
-        discount = ''
-        if old_price and old_price > price:
-            saved = old_price - price
-            percent = int((saved / old_price) * 100)
-            discount = f"\n{emojis['fire']} СКИДКА {percent}% (экономия {saved:,}₽)"
-        
-        stars = '⭐' * int(rating) if rating else ''
-        date_str = departure[:10] if departure else 'Гибкие даты'
-        
-        text = (
-            f"{emojis['fire']} <b>ГОРЯЩИЙ ТУР: {country}</b> {emojis['fire']}\n"
-            f"{'📍 ' + city + '\n' if city else ''}"
-            f"🏨 {hotel}\n"
-            f"{stars}{' (' + str(rating) + '/5)' if rating else ''}\n"
-            f"🌙 {nights} ночей / 2 человека\n"
-            f"{emojis['date']} Вылет: {date_str}\n"
-            f"{emojis['price']} <b>{price:,}₽</b>{discount}\n"
-            f"\n{emojis['link']} <a href='{link}'>Забронировать тур</a>\n"
-            f"\n<i>Цены актуальны на момент публикации. Партнёр @TravelPayouts</i>"
-        )
-        return {'text': text, 'image': None, 'link': link, 'parse_mode': 'HTML'}
+        Args:
+            flight: dict с данными о рейсе
+            
+        Returns:
+            dict с текстом поста, ссылкой и parse_mode
+        """
+        style = POST_SETTINGS.get('emoji_style', 'flight')
+        emojis = EMOJIS.get(style, EMOJIS['flight'])
+        return FlightFormatter._format_flight(flight, emojis)
     
     @staticmethod
     def _format_flight(flight: dict, emojis: dict) -> dict:
-        origin = flight.get('origin', 'MOW')
-        destination = flight.get('destination', '?')
+        """
+        Форматирование одного авиабилета
+        
+        Args:
+            flight: dict с данными о рейсе
+            emojis: dict с эмодзи для выбранного стиля
+            
+        Returns:
+            dict с готовым постом
+        """
+        origin = flight.get('origin', '???')
+        destination = flight.get('destination', '???')
         price = flight.get('price', 0)
         airline = flight.get('airline', '')
         depart_date = flight.get('depart_date', '')
+        return_date = flight.get('return_date', '')
         link = flight.get('affiliate_link', flight.get('link', '#'))
+        country = flight.get('country_name', '')
+        city = flight.get('city_name', '')
         
-        cities = {'MOW': 'Москва', 'LED': 'Санкт-Петербург', 'AER': 'Сочи', 'IST': 'Стамбул', 'DXB': 'Дубай', 'BKK': 'Бангкок', 'HKT': 'Пхукет', 'TBS': 'Тбилиси', 'EVN': 'Ереван', 'AYT': 'Анталья', 'SSH': 'Шарм-эль-Шейх'}
-        from_city = cities.get(origin, origin)
-        to_city = cities.get(destination, destination)
+        # ✅ Форматируем названия городов
+        from_city = CITY_NAMES.get(origin, origin)
+        to_city = CITY_NAMES.get(destination, destination)
         
+        # Если есть название города — используем его
+        if city and city != to_city:
+            to_city = f"{city}, {country}" if country else city
+        
+        # ✅ Форматируем даты
+        dep_str = FlightFormatter._format_date(depart_date)
+        
+        # Возвратная дата (опционально)
+        return_text = ""
+        if return_date:
+            ret_str = FlightFormatter._format_date(return_date, short=True)
+            return_text = f" — {ret_str}"
+        
+        # ✅ Текст поста
         text = (
-            f"{emojis['flight']} <b>ВЫГОДНЫЙ АВИАБИЛЕТ</b>\n"
-            f"🛫 {from_city} → {to_city}\n"
+            f"{emojis['fire']} <b>ВЫГОДНЫЙ АВИАБИЛЕТ</b> {emojis['fire']}\n\n"
+            f"🛫 {from_city} {emojis['arrow']} {to_city}\n"
             f"{'✈️ ' + airline + '\n' if airline else ''}"
-            f"{emojis['date']} Дата: {depart_date or 'Гибкие даты'}\n"
-            f"{emojis['price']} <b>{price:,}₽</b>\n"
-            f"\n{emojis['link']} <a href='{link}'>Найти билеты</a>\n"
-            f"\n<i>Цены могут измениться. Партнёр @Aviasales</i>"
+            f"{emojis['date']} {dep_str}{return_text}\n"
+            f"{emojis['price']} <b>{price:,}₽</b>\n\n"
+            f"{emojis['link']} <a href='{link}'>Найти билеты</a>\n\n"
+            f"<i>Цены актуальны на момент публикации. Партнёр @Aviasales</i>"
         )
-        return {'text': text, 'image': None, 'link': link, 'parse_mode': 'HTML'}
+        
+        return {
+            'text': text,
+            'image': None,  # Авиа-посты обычно без картинок
+            'link': link,
+            'parse_mode': 'HTML'
+        }
+    
+    @staticmethod
+    def _format_date(date_str: str, short: bool = False) -> str:
+        """
+        Форматирование даты
+        
+        Args:
+            date_str: дата в формате ISO (2026-05-15)
+            short: если True, возвращает только день и месяц
+            
+        Returns:
+            Отформатированная строка даты
+        """
+        if not date_str:
+            return 'Гибкие даты'
+        
+        try:
+            # Пробуем распарсить ISO формат
+            dt = datetime.fromisoformat(date_str.replace('Z', '+00:00'))
+            if short:
+                return dt.strftime('%d.%m')
+            else:
+                return dt.strftime('%d.%m.%Y')
+        except (ValueError, TypeError):
+            # Если не получилось — возвращаем как есть (первые 10 символов)
+            return date_str[:10] if len(date_str) >= 10 else date_str
+    
+    @staticmethod
+    def add_hashtags(text: str, tags: list) -> str:
+        """
+        Добавление хэштегов к посту (опционально)
+        
+        Args:
+            text: исходный текст поста
+            tags: список хэштегов без #
+            
+        Returns:
+            Текст с добавленными хэштегами
+        """
+        if not tags:
+            return text
+        hashtags = ' '.join(f'#{tag}' for tag in tags)
+        return f"{text}\n\n{hashtags}"

@@ -18,7 +18,7 @@ if not CHANNEL_ID:
     raise ValueError("❌ CHANNEL_ID не найден!")
 
 # ✅ ТЕСТОВЫЙ РЕЖИМ
-TEST_MODE = os.getenv('TEST_MODE', 'false').lower() == 'true'
+TEST_MODE = False
 
 # ✅ ФИЛЬТРЫ АВИАБИЛЕТОВ (ОСЛАБЛЕНЫ ДЛЯ ТЕСТА)
 FILTERS = {

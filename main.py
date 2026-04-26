@@ -2,7 +2,9 @@ import asyncio
 import logging
 import os
 import traceback
+import sys
 from datetime import datetime
+
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 
@@ -10,7 +12,6 @@ from aiogram import Bot, Dispatcher, Router
 from aiogram.types import Message
 from aiogram.filters import Command
 
-# ✅ Импортируем ТОЛЬКО то, что есть в config.py
 from config import SCHEDULE, POST_SETTINGS, LOG_LEVEL, CHANNEL_ID, FILTERS, TEST_MODE
 from parser import FlightParser
 from poster import ChannelPoster
@@ -18,7 +19,8 @@ from poster import ChannelPoster
 # ✅ Настройка логирования
 logging.basicConfig(
     level=getattr(logging, LOG_LEVEL),
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[logging.StreamHandler(sys.stdout)]
 )
 logger = logging.getLogger(__name__)
 
@@ -34,8 +36,9 @@ admin_bot: Bot = None
 dp = Dispatcher()
 test_router = Router()
 
+
 async def send_admin_alert(text: str, parse_mode: str = 'HTML'):
-    """Уведомление админу в ЛС"""
+    """Отправка уведомления админу в ЛС"""
     global admin_bot
     admin_id = os.getenv('ADMIN_ID')
     if not admin_id:
@@ -49,112 +52,206 @@ async def send_admin_alert(text: str, parse_mode: str = 'HTML'):
             parse_mode=parse_mode,
             disable_web_page_preview=True
         )
+        logger.info(f"🔔 Уведомление отправлено админу")
     except Exception as e:
-        logger.warning(f"⚠️ Не отправлено уведомление: {e}")
+        logger.warning(f"⚠️ Не удалось отправить уведомление: {e}")
+
 
 async def can_post() -> bool:
-    """Можно ли публиковать пост"""
+    """Проверка, можно ли публиковать пост"""
     global last_post_time, posts_today
     if posts_today >= POST_SETTINGS['max_posts_per_day']:
+        logger.info(f"❌ Лимит постов исчерпан ({posts_today})")
         return False
     if last_post_time:
         hours = (datetime.now() - last_post_time).total_seconds() / 3600
         if hours < POST_SETTINGS['min_hours_between']:
+            logger.info(f"⏳ Слишком рано для следующего поста ({hours:.1f}ч)")
             return False
     return True
 
+
 async def publish_flight():
-    """Публикация одного авиабилета"""
+    """Публикация поста с несколькими вариантами рейсов (чартер-формат)"""
     global last_post_time, posts_today
+    
     if not await can_post():
         return
+    
     try:
-        flights = await parser.fetch_flights(limit=3)
+        # ✅ Запрашиваем несколько рейсов для одного поста
+        flights = await parser.fetch_flights(limit=5)
         if not flights:
             logger.warning("❌ Нет доступных авиабилетов")
             return
-        flight = flights[0]
-        content = parser.format_flight_post(flight)
+        
+        # ✅ Форматируем ВСЕ рейсы в один пост
+        content = parser.format_flight_post(flights)
         success = await poster.post(content)
+        
         if success:
             last_post_time = datetime.now()
             posts_today += 1
-            logger.info(f"✅ Опубликован авиабилет #{posts_today}: {flight.get('origin')}→{flight.get('destination')}")
+            direction = f"{flights[0].get('origin')}→{flights[0].get('destination')}"
+            logger.info(f"✅ Опубликован чартер-пост #{posts_today}: {direction}")
+            
     except Exception as e:
-        logger.error(f"❌ Ошибка: {e}")
-        await send_admin_alert(f"❌ Ошибка публикации:\n<code>{e}</code>")
+        error_msg = f"❌ Ошибка публикации: {type(e).__name__}: {e}"
+        logger.error(error_msg)
+        await send_admin_alert(f"❌ Ошибка публикации:\n<code>{error_msg}</code>")
+
 
 async def morning_job():
+    """Утренний постинг"""
     logger.info("🌅 Утренний постинг авиабилетов...")
     await publish_flight()
 
+
 async def afternoon_job():
+    """Дневной постинг"""
     logger.info("☀️ Дневной постинг авиабилетов...")
     await publish_flight()
 
+
 async def evening_job():
+    """Вечерний постинг"""
     logger.info("🌆 Вечерний постинг авиабилетов...")
     await publish_flight()
 
+
 async def setup_scheduler():
-    """Настройка расписания"""
+    """Настройка расписания постинга"""
     scheduler = AsyncIOScheduler(timezone='UTC')
-    scheduler.add_job(morning_job, CronTrigger(hour=SCHEDULE['morning']['hour'], minute=SCHEDULE['morning']['minute']), id='morning', name='Утро')
-    scheduler.add_job(afternoon_job, CronTrigger(hour=SCHEDULE['afternoon']['hour'], minute=SCHEDULE['afternoon']['minute']), id='afternoon', name='День')
-    scheduler.add_job(evening_job, CronTrigger(hour=SCHEDULE['evening']['hour'], minute=SCHEDULE['evening']['minute']), id='evening', name='Вечер')
+    
+    scheduler.add_job(
+        morning_job,
+        CronTrigger(hour=SCHEDULE['morning']['hour'], minute=SCHEDULE['morning']['minute']),
+        id='morning',
+        name='Утро'
+    )
+    scheduler.add_job(
+        afternoon_job,
+        CronTrigger(hour=SCHEDULE['afternoon']['hour'], minute=SCHEDULE['afternoon']['minute']),
+        id='afternoon',
+        name='День'
+    )
+    scheduler.add_job(
+        evening_job,
+        CronTrigger(hour=SCHEDULE['evening']['hour'], minute=SCHEDULE['evening']['minute']),
+        id='evening',
+        name='Вечер'
+    )
+    
     scheduler.start()
-    # ✅ Показываем время в МСК (UTC+3)
-    logger.info(f"⏰ Планировщик запущен. Посты: {SCHEDULE['morning']['hour']+3}:00, {SCHEDULE['afternoon']['hour']+3}:00, {SCHEDULE['evening']['hour']+3}:00 МСК")
+    
+    # Показываем время в МСК (UTC+3)
+    msk_times = [
+        f"{SCHEDULE['morning']['hour']+3}:00",
+        f"{SCHEDULE['afternoon']['hour']+3}:00", 
+        f"{SCHEDULE['evening']['hour']+3}:00"
+    ]
+    logger.info(f"⏰ Планировщик запущен. Посты: {', '.join(msk_times)} МСК")
+    
     return scheduler
+
 
 @test_router.message(Command("test"))
 async def cmd_test(message: Message):
-    """Тест по команде /test"""
+    """Тестовая публикация по команде /test"""
     admin_id = os.getenv('ADMIN_ID')
-    if admin_id and message.from_user.id != int(admin_id):
-        await message.answer("❌ Доступ запрещён", parse_mode='HTML')
-        return
-    await message.answer("🔄 Тестовая публикация...", parse_mode='HTML')
+    
+    # Проверка доступа (если ADMIN_ID задан)
+    if admin_id:
+        if message.from_user.id != int(admin_id):
+            await message.answer("❌ Доступ запрещён", parse_mode='HTML')
+            return
+    
+    await message.answer("🔄 Запускаю тестовую публикацию...", parse_mode='HTML')
+    
     try:
         await publish_flight()
-        await message.answer("✅ Готово!", parse_mode='HTML')
+        await message.answer("✅ Готово! Проверьте канал.", parse_mode='HTML')
     except Exception as e:
         await message.answer(f"❌ Ошибка: <code>{e}</code>", parse_mode='HTML')
+        await send_admin_alert(f"❌ Ошибка при тесте: <code>{e}</code>")
+
 
 async def main():
-    """Главная функция"""
+    """Главная функция запуска бота"""
     global last_post_time, posts_today, last_reset_date, admin_bot
-    logger.info("✈️ Запуск авиа-бота...")
+    
+    logger.info("✈️ Запуск авиа-бота (Москва ↔ Нячанг)...")
     logger.info(f"🧪 TEST_MODE: {TEST_MODE}")
     logger.info(f"📺 Канал: {CHANNEL_ID}")
     
     try:
+        # ✅ Инициализация бота для уведомлений
         admin_bot = Bot(token=os.getenv('BOT_TOKEN'))
-        await send_admin_alert(f"✅ <b>Авиа-бот запущен!</b>\n🕐 {datetime.now().strftime('%H:%M')} МСК")
         
+        # ✅ Отправляем уведомление о запуске
+        startup_info = (
+            f"✅ <b>Авиа-бот запущен!</b>\n"
+            f"🕐 {datetime.now().strftime('%H:%M')} МСК\n"
+            f"🏖️ Направление: Москва ↔ Нячанг"
+        )
+        await send_admin_alert(startup_info)
+        
+        # ✅ Проверка подключения к каналу
         chat = await poster.bot.get_chat(CHANNEL_ID)
         logger.info(f"✅ Канал: {chat.title or CHANNEL_ID}")
         
+        # ✅ Регистрируем тестовый роутер
         dp.include_router(test_router)
+        logger.info("✅ Хендлер /test зарегистрирован")
+        
+        # ✅ Запускаем планировщик
         scheduler = await setup_scheduler()
         
+        # ✅ Запускаем polling
         logger.info("📡 Запуск polling...")
         await dp.start_polling(poster.bot)
         
     except KeyboardInterrupt:
-        logger.info("⏹️ Остановка")
-        await send_admin_alert("⏹️ Бот остановлен")
+        logger.info("⏹️ Остановка по запросу пользователя")
+        await send_admin_alert("⏹️ Бот остановлен вручную")
+        
     except Exception as e:
-        logger.error(f"❌ Критическая ошибка: {e}")
-        await send_admin_alert(f"❌ <b>БОТ УПАЛ!</b>\n<code>{e}</code>")
+        error_msg = f"❌ Критическая ошибка: {type(e).__name__}: {e}"
+        logger.error(error_msg)
+        logger.error(traceback.format_exc())
+        await send_admin_alert(
+            f"❌ <b>БОТ УПАЛ!</b>\n\n"
+            f"<code>{error_msg}</code>\n\n"
+            f"<code>{traceback.format_exc()[:1000]}</code>"
+        )
         raise
+        
     finally:
-        await parser.close()
-        await poster.close()
-        if admin_bot:
-            await admin_bot.session.close()
+        # ✅ Закрываем сессии
+        try:
+            await parser.close()
+            await poster.close()
+            if admin_bot:
+                await admin_bot.session.close()
+            logger.info("👋 Сессии закрыты")
+        except Exception as e:
+            logger.warning(f"⚠️ Ошибка при закрытии сессий: {e}")
+
 
 if __name__ == "__main__":
-    import sys
-    sys.excepthook = lambda t, v, tb: logger.error(f"💥 {v}")
+    # ✅ Перехват необработанных исключений
+    def handle_uncaught_exception(exc_type, exc_value, exc_traceback):
+        if issubclass(exc_type, KeyboardInterrupt):
+            return
+        error_msg = f"💥 Uncaught exception: {exc_type.__name__}: {exc_value}"
+        logger.error(error_msg)
+        logger.error(''.join(traceback.format_exception(exc_type, exc_value, exc_traceback)))
+        try:
+            asyncio.run(send_admin_alert(f"💥 <b>КРАХ БОТА!</b>\n<code>{error_msg}</code>"))
+        except:
+            pass
+    
+    sys.excepthook = handle_uncaught_exception
+    
+    # ✅ Запуск главной функции
     asyncio.run(main())

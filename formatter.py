@@ -4,9 +4,10 @@ from config import POST_SETTINGS
 
 logger = logging.getLogger(__name__)
 
-# ✅ Названия городов для отображения
+# ✅ Названия городов — ПРОВЕРЬТЕ, ЧТО CXR ЕСТЬ!
 CITY_NAMES = {
     'MOW': 'Москва',
+    'CXR': 'Нячанг (Камрань)',  # ✅ Ключевое: CXR → Нячанг
     'LED': 'Санкт-Петербург',
     'SVX': 'Екатеринбург',
     'KZN': 'Казань',
@@ -20,6 +21,8 @@ CITY_NAMES = {
     'GOA': 'Гоа',
     'AYT': 'Анталья',
     'SSH': 'Шарм-эль-Шейх',
+    'SGN': 'Хошимин',
+    'HAN': 'Ханой',
 }
 
 # ✅ Эмодзи для разных стилей
@@ -32,7 +35,8 @@ EMOJIS = {
         'fire': '🔥',
         'new': '✨',
         'top': '🏆',
-        'arrow': '➡️'
+        'arrow': '➡️',
+        'beach': '🏖️'
     },
     'fire': {
         'flight': '🔥',
@@ -42,7 +46,8 @@ EMOJIS = {
         'fire': '🔥🔥',
         'new': '🆕',
         'top': '👑',
-        'arrow': '➡️'
+        'arrow': '➡️',
+        'beach': '🏝️'
     },
     'minimal': {
         'flight': '',
@@ -52,41 +57,25 @@ EMOJIS = {
         'fire': '',
         'new': '',
         'top': '',
-        'arrow': '→'
+        'arrow': '→',
+        'beach': ''
     }
 }
 
 
 class FlightFormatter:
-    """Форматирование постов с авиабилетами для Telegram канала"""
+    """Форматирование постов с авиабилетами"""
     
     @staticmethod
     def format(flight: dict) -> dict:
-        """
-        Основной метод форматирования авиабилета
-        
-        Args:
-            flight: dict с данными о рейсе
-            
-        Returns:
-            dict с текстом поста, ссылкой и parse_mode
-        """
+        """Основной метод форматирования"""
         style = POST_SETTINGS.get('emoji_style', 'flight')
         emojis = EMOJIS.get(style, EMOJIS['flight'])
         return FlightFormatter._format_flight(flight, emojis)
     
     @staticmethod
     def _format_flight(flight: dict, emojis: dict) -> dict:
-        """
-        Форматирование одного авиабилета
-        
-        Args:
-            flight: dict с данными о рейсе
-            emojis: dict с эмодзи для выбранного стиля
-            
-        Returns:
-            dict с готовым постом
-        """
+        """Форматирование одного авиабилета"""
         origin = flight.get('origin', '???')
         destination = flight.get('destination', '???')
         price = flight.get('price', 0)
@@ -97,26 +86,37 @@ class FlightFormatter:
         country = flight.get('country_name', '')
         city = flight.get('city_name', '')
         
-        # ✅ Форматируем названия городов
+        # ✅ Форматируем названия городов — ПРОВЕРКА НА CXR
         from_city = CITY_NAMES.get(origin, origin)
         to_city = CITY_NAMES.get(destination, destination)
         
-        # Если есть название города — используем его
-        if city and city != to_city:
+        # ✅ Дополнительная проверка: если city задан — используем его
+        if city and city.lower() not in to_city.lower():
             to_city = f"{city}, {country}" if country else city
+        
+        # ✅ Добавляем эмодзи пляжа для Вьетнама
+        beach_emoji = emojis.get('beach', '🏖️') if destination == 'CXR' else ''
         
         # ✅ Форматируем даты
         dep_str = FlightFormatter._format_date(depart_date)
         
-        # Возвратная дата (опционально)
+        # Возвратная дата
         return_text = ""
         if return_date:
             ret_str = FlightFormatter._format_date(return_date, short=True)
             return_text = f" — {ret_str}"
         
+        # ✅ Заголовок поста в зависимости от направления
+        if destination == 'CXR':
+            title = f"{emojis['fire']} <b>АВИАБИЛЕТЫ В НЯЧАНГ</b> {beach_emoji} {emojis['fire']}"
+        elif origin == 'CXR':
+            title = f"{emojis['fire']} <b>АВИАБИЛЕТЫ ИЗ НЯЧАНГА</b> {beach_emoji} {emojis['fire']}"
+        else:
+            title = f"{emojis['fire']} <b>ВЫГОДНЫЙ АВИАБИЛЕТ</b> {emojis['fire']}"
+        
         # ✅ Текст поста
         text = (
-            f"{emojis['fire']} <b>ВЫГОДНЫЙ АВИАБИЛЕТ</b> {emojis['fire']}\n\n"
+            f"{title}\n\n"
             f"🛫 {from_city} {emojis['arrow']} {to_city}\n"
             f"{'✈️ ' + airline + '\n' if airline else ''}"
             f"{emojis['date']} {dep_str}{return_text}\n"
@@ -127,49 +127,29 @@ class FlightFormatter:
         
         return {
             'text': text,
-            'image': None,  # Авиа-посты обычно без картинок
+            'image': None,
             'link': link,
             'parse_mode': 'HTML'
         }
     
     @staticmethod
     def _format_date(date_str: str, short: bool = False) -> str:
-        """
-        Форматирование даты
-        
-        Args:
-            date_str: дата в формате ISO (2026-05-15)
-            short: если True, возвращает только день и месяц
-            
-        Returns:
-            Отформатированная строка даты
-        """
+        """Форматирование даты"""
         if not date_str:
             return 'Гибкие даты'
         
         try:
-            # Пробуем распарсить ISO формат
             dt = datetime.fromisoformat(date_str.replace('Z', '+00:00'))
             if short:
                 return dt.strftime('%d.%m')
             else:
                 return dt.strftime('%d.%m.%Y')
         except (ValueError, TypeError):
-            # Если не получилось — возвращаем как есть (первые 10 символов)
             return date_str[:10] if len(date_str) >= 10 else date_str
     
     @staticmethod
     def add_hashtags(text: str, tags: list) -> str:
-        """
-        Добавление хэштегов к посту (опционально)
-        
-        Args:
-            text: исходный текст поста
-            tags: список хэштегов без #
-            
-        Returns:
-            Текст с добавленными хэштегами
-        """
+        """Добавление хэштегов"""
         if not tags:
             return text
         hashtags = ' '.join(f'#{tag}' for tag in tags)

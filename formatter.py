@@ -21,13 +21,13 @@ CITY_NAMES = {
     'GOA': 'Гоа',
 }
 
-# 🔗 БАЗОВЫЕ ССЫЛКИ С MARKER (без дат — даты добавим динамически)
+# 🔗 БАЗОВЫЕ ССЫЛКИ С MARKER (даты добавим динамически)
 BASE_LINKS = {
     'MOW_CXR': 'https://www.aviasales.ru/search/MOW{dep_date}CXR{ret_date}?marker=2VtzqvfYndD',
     'CXR_MOW': 'https://www.aviasales.ru/search/CXR{dep_date}MOW{ret_date}?marker=2VtzqvfYndD',
 }
 
-# ✅ Отель и тур (статические ссылки)
+# ✅ Отель и тур
 PARTNER_LINKS = {
     'hotel': 'https://trip.tpo.lv/7CShdPK6',
     'tour': 'https://level.tpo.lv/yygU1AmM',
@@ -40,7 +40,6 @@ class FlightFormatter:
     @staticmethod
     def format(flights) -> dict:
         """Форматирование списка авиабилетов в один пост"""
-        # ✅ Защита от неправильных данных
         if not flights or not isinstance(flights, list):
             return {'text': '❌ Нет доступных рейсов', 'parse_mode': 'HTML'}
         
@@ -70,15 +69,15 @@ class FlightFormatter:
             price = flight.get('price', 0)
             baggage = flight.get('baggage', '10кг')
             
-            # Форматируем даты: "26 апреля - 5 мая"
+            # Форматируем даты
             dep_str = FlightFormatter._format_date_russian(depart_date)
             ret_str = FlightFormatter._format_date_russian(return_date)
             date_range = f"{dep_str} - {ret_str}"
             
-            # Форматируем цену: "35 251 руб."
-            price_str = f"{price:,} руб.".replace(',', ' ')
+            # ✅ Форматируем цену с "от" (чтобы было понятно, что цена примерная)
+            price_str = f"от {price:,} руб.".replace(',', ' ')
             
-            # ✅ ГЕНЕРИРУЕМ ССЫЛКУ С ДАТАМИ ИЗ ДАННЫХ
+            # ✅ Генерируем ссылку с датами
             link = FlightFormatter._generate_link(origin, destination, depart_date, return_date)
             
             # ✅ Строка рейса
@@ -95,13 +94,19 @@ class FlightFormatter:
             f"Или хватай тур на эти даты! ({PARTNER_LINKS['tour']})"
         )
         
-        # ✅ Предупреждение
+        # ✅ УЛУЧШЕННОЕ предупреждение о ценах
         warning = (
-            "\n\n⚠️ Цена и наличие билетов может измениться в любой момент. "
-            "Проверь прямо сейчас — часто после публикации становится ещё дешевле!"
+            "\n\n⚠️ <b>Внимание!</b> Цены актуальны на момент публикации и могут измениться. "
+            "Переходите по ссылке для проверки актуальной стоимости — часто после публикации становится ещё дешевле!"
         )
         
-        text = title + "\n" + "\n".join(flight_lines) + hotel_block + warning
+        # ✅ Дополнительный дисклеймер
+        disclaimer = (
+            "\n\n<i>📊 Цены могут отличаться на сайте партнёра в момент бронирования. "
+            "Это связано с динамическим ценообразованием авиакомпаний.</i>"
+        )
+        
+        text = title + "\n" + "\n".join(flight_lines) + hotel_block + warning + disclaimer
         
         return {
             'text': text,
@@ -112,29 +117,13 @@ class FlightFormatter:
     
     @staticmethod
     def _generate_link(origin: str, destination: str, depart_date: str, return_date: str) -> str:
-        """
-        ✅ ГЕНЕРАЦИЯ ССЫЛКИ С ДИНАМИЧЕСКИМИ ДАТАМИ
-        
-        Формат: https://www.aviasales.ru/search/MOWDDMMCXRDDMM?marker=XXX
-        
-        Args:
-            origin: Код города вылета (MOW, CXR, etc.)
-            destination: Код города прилёта
-            depart_date: Дата вылета в формате ISO (2026-04-26)
-            return_date: Дата возвращения в формате ISO (2026-05-05)
-            
-        Returns:
-            Готовая ссылка с датами в формате Aviasales
-        """
-        # ✅ Форматируем даты в DDMM
+        """Генерация ссылки с динамическими датами"""
         dep_ddmm = FlightFormatter._format_date_ddmm(depart_date)
         ret_ddmm = FlightFormatter._format_date_ddmm(return_date)
         
-        # ✅ Определяем направление для базовой ссылки
         route_key = f'{origin}_{destination}'
         base_template = BASE_LINKS.get(route_key, BASE_LINKS['MOW_CXR'])
         
-        # ✅ Подставляем даты в шаблон
         link = base_template.format(dep_date=dep_ddmm, ret_date=ret_ddmm)
         
         logger.debug(f"🔗 Сгенерирована ссылка: {link[:80]}...")
@@ -142,27 +131,18 @@ class FlightFormatter:
     
     @staticmethod
     def _format_date_ddmm(date_str: str) -> str:
-        """
-        Форматирование даты в DDMM для ссылки Aviasales
-        
-        Args:
-            date_str: Дата в формате ISO (2026-04-26)
-            
-        Returns:
-            Строка в формате DDMM (2604)
-        """
+        """Форматирование даты в DDMM для ссылки"""
         if not date_str:
-            return '0112'  # Дата по умолчанию (1 декабря)
-        
+            return '0112'
         try:
             dt = datetime.fromisoformat(date_str.replace('Z', '+00:00'))
-            return f"{dt.day:02d}{dt.month:02d}"  # Формат DDMM с ведущими нулями
-        except (ValueError, TypeError):
-            return '0112'  # Дата по умолчанию при ошибке
+            return f"{dt.day:02d}{dt.month:02d}"
+        except:
+            return '0112'
     
     @staticmethod
     def _format_date_russian(date_str: str) -> str:
-        """Форматирование даты для отображения: "26 апреля" """
+        """Форматирование даты: "26 апреля" """
         if not date_str:
             return 'Гибкие даты'
         try:
@@ -176,7 +156,6 @@ class FlightFormatter:
     
     @staticmethod
     def add_hashtags(text: str, tags: list) -> str:
-        """Добавление хэштегов"""
         if not tags:
             return text
         hashtags = ' '.join(f'#{tag}' for tag in tags)

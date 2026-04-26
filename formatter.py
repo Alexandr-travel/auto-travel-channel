@@ -1,4 +1,5 @@
 import logging
+import urllib.parse
 from datetime import datetime
 from config import POST_SETTINGS
 
@@ -21,25 +22,26 @@ CITY_NAMES = {
     'GOA': 'Гоа',
 }
 
-# 🔗 ВАШИ РАБОЧИЕ ССЫЛКИ (ОПТИМИЗИРОВАННЫЕ)
-# 💡 Добавлены параметры поиска для целевого редиректа
+# 🔗 ВАШИ ССЫЛКИ С ПРАВИЛЬНЫМ КОДИРОВАНИЕМ
+# Формат: https://aviasales.tpm.lv/XXX?erid=YYY&u=URL_ENCODED_TARGET
+# Где u= содержит закодированную ссылку на поиск Aviasales
 PARTNER_LINKS = {
-    # ✅ Москва → Нячанг (с параметрами для целевого поиска)
+    # ✅ Москва → Нячанг (правильно закодированные ссылки)
     'MOW_CXR': [
-        'https://aviasales.tpm.lv/jocJAnWm?erid=2VtzqvfYndD&origin=MOW&destination=CXR&flexible_dates=1',
-        'https://aviasales.tpm.lv/jocJAnWm?erid=2VtzqvfYndD&origin=MOW&destination=CXR&flexible_dates=1',
-        'https://aviasales.tpm.lv/jocJAnWm?erid=2VtzqvfYndD&origin=MOW&destination=CXR&flexible_dates=1',
-        'https://aviasales.tpm.lv/jocJAnWm?erid=2VtzqvfYndD&origin=MOW&destination=CXR&flexible_dates=1',
-        'https://aviasales.tpm.lv/jocJAnWm?erid=2VtzqvfYndD&origin=MOW&destination=CXR&flexible_dates=1',
+        'https://aviasales.tpm.lv/jocJAnWm?erid=2VtzqvfYndD&u=' + urllib.parse.quote('https://www.aviasales.ru/search/MOWCXR?flexible_dates=1&adults=1', safe=''),
+        'https://aviasales.tpm.lv/jocJAnWm?erid=2VtzqvfYndD&u=' + urllib.parse.quote('https://www.aviasales.ru/search/MOWCXR?flexible_dates=1&adults=1', safe=''),
+        'https://aviasales.tpm.lv/jocJAnWm?erid=2VtzqvfYndD&u=' + urllib.parse.quote('https://www.aviasales.ru/search/MOWCXR?flexible_dates=1&adults=1', safe=''),
+        'https://aviasales.tpm.lv/jocJAnWm?erid=2VtzqvfYndD&u=' + urllib.parse.quote('https://www.aviasales.ru/search/MOWCXR?flexible_dates=1&adults=1', safe=''),
+        'https://aviasales.tpm.lv/jocJAnWm?erid=2VtzqvfYndD&u=' + urllib.parse.quote('https://www.aviasales.ru/search/MOWCXR?flexible_dates=1&adults=1', safe=''),
     ],
     
-    # ✅ Нячанг → Москва (с параметрами для целевого поиска)
+    # ✅ Нячанг → Москва (правильно закодированные ссылки)
     'CXR_MOW': [
-        'https://aviasales.tpm.lv/YsBVke5L?erid=2VtzqvfYndD&origin=CXR&destination=MOW&flexible_dates=1',
-        'https://aviasales.tpm.lv/YsBVke5L?erid=2VtzqvfYndD&origin=CXR&destination=MOW&flexible_dates=1',
-        'https://aviasales.tpm.lv/YsBVke5L?erid=2VtzqvfYndD&origin=CXR&destination=MOW&flexible_dates=1',
-        'https://aviasales.tpm.lv/YsBVke5L?erid=2VtzqvfYndD&origin=CXR&destination=MOW&flexible_dates=1',
-        'https://aviasales.tpm.lv/YsBVke5L?erid=2VtzqvfYndD&origin=CXR&destination=MOW&flexible_dates=1',
+        'https://aviasales.tpm.lv/YsBVke5L?erid=2VtzqvfYndD&u=' + urllib.parse.quote('https://www.aviasales.ru/search/CXRMOW?flexible_dates=1&adults=1', safe=''),
+        'https://aviasales.tpm.lv/YsBVke5L?erid=2VtzqvfYndD&u=' + urllib.parse.quote('https://www.aviasales.ru/search/CXRMOW?flexible_dates=1&adults=1', safe=''),
+        'https://aviasales.tpm.lv/YsBVke5L?erid=2VtzqvfYndD&u=' + urllib.parse.quote('https://www.aviasales.ru/search/CXRMOW?flexible_dates=1&adults=1', safe=''),
+        'https://aviasales.tpm.lv/YsBVke5L?erid=2VtzqvfYndD&u=' + urllib.parse.quote('https://www.aviasales.ru/search/CXRMOW?flexible_dates=1&adults=1', safe=''),
+        'https://aviasales.tpm.lv/YsBVke5L?erid=2VtzqvfYndD&u=' + urllib.parse.quote('https://www.aviasales.ru/search/CXRMOW?flexible_dates=1&adults=1', safe=''),
     ],
     
     # ✅ Отель

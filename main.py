@@ -92,7 +92,17 @@ async def publish_flight():
         if success:
             last_post_time = datetime.now()
             posts_today += 1
-            direction = f"{flights[0].get('origin')}→{flights[0].get('destination')}"
+            
+            # ✅ БЕЗОПАСНОЕ получение направления
+            try:
+                first = flights[0] if flights else {}
+                if isinstance(first, dict):
+                    direction = f"{first.get('origin', '?')}→{first.get('destination', '?')}"
+                else:
+                    direction = "???"
+            except:
+                direction = "???"
+            
             logger.info(f"✅ Опубликован чартер-пост #{posts_today}: {direction}")
             
     except Exception as e:
@@ -144,7 +154,6 @@ async def setup_scheduler():
     
     scheduler.start()
     
-    # Показываем время в МСК (UTC+3)
     msk_times = [
         f"{SCHEDULE['morning']['hour']+3}:00",
         f"{SCHEDULE['afternoon']['hour']+3}:00", 
@@ -160,7 +169,6 @@ async def cmd_test(message: Message):
     """Тестовая публикация по команде /test"""
     admin_id = os.getenv('ADMIN_ID')
     
-    # Проверка доступа (если ADMIN_ID задан)
     if admin_id:
         if message.from_user.id != int(admin_id):
             await message.answer("❌ Доступ запрещён", parse_mode='HTML')
@@ -185,10 +193,8 @@ async def main():
     logger.info(f"📺 Канал: {CHANNEL_ID}")
     
     try:
-        # ✅ Инициализация бота для уведомлений
         admin_bot = Bot(token=os.getenv('BOT_TOKEN'))
         
-        # ✅ Отправляем уведомление о запуске
         startup_info = (
             f"✅ <b>Авиа-бот запущен!</b>\n"
             f"🕐 {datetime.now().strftime('%H:%M')} МСК\n"
@@ -196,18 +202,14 @@ async def main():
         )
         await send_admin_alert(startup_info)
         
-        # ✅ Проверка подключения к каналу
         chat = await poster.bot.get_chat(CHANNEL_ID)
         logger.info(f"✅ Канал: {chat.title or CHANNEL_ID}")
         
-        # ✅ Регистрируем тестовый роутер
         dp.include_router(test_router)
         logger.info("✅ Хендлер /test зарегистрирован")
         
-        # ✅ Запускаем планировщик
         scheduler = await setup_scheduler()
         
-        # ✅ Запускаем polling
         logger.info("📡 Запуск polling...")
         await dp.start_polling(poster.bot)
         
@@ -227,7 +229,6 @@ async def main():
         raise
         
     finally:
-        # ✅ Закрываем сессии
         try:
             await parser.close()
             await poster.close()
@@ -239,7 +240,6 @@ async def main():
 
 
 if __name__ == "__main__":
-    # ✅ Перехват необработанных исключений
     def handle_uncaught_exception(exc_type, exc_value, exc_traceback):
         if issubclass(exc_type, KeyboardInterrupt):
             return
@@ -253,5 +253,4 @@ if __name__ == "__main__":
     
     sys.excepthook = handle_uncaught_exception
     
-    # ✅ Запуск главной функции
     asyncio.run(main())

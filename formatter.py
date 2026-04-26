@@ -21,32 +21,15 @@ CITY_NAMES = {
     'GOA': 'Гоа',
 }
 
-# 🔗 ПРЯМЫЕ ССЫЛКИ AVIASALES С ПАРАМЕТРОМ marker=
-# ✅ Формат: https://www.aviasales.ru/search/ORIGDEST?marker=XXX&params
-# ✅ Клики отслеживаются через параметр marker=2VtzqvfYndD
+# 🔗 БАЗОВЫЕ ССЫЛКИ С MARKER (без дат — даты добавим динамически)
+BASE_LINKS = {
+    'MOW_CXR': 'https://www.aviasales.ru/search/MOW{dep_date}CXR{ret_date}?marker=2VtzqvfYndD',
+    'CXR_MOW': 'https://www.aviasales.ru/search/CXR{dep_date}MOW{ret_date}?marker=2VtzqvfYndD',
+}
+
+# ✅ Отель и тур (статические ссылки)
 PARTNER_LINKS = {
-    # ✅ Москва → Нячанг (прямые ссылки с marker)
-    'MOW_CXR': [
-        'https://www.aviasales.ru/search/MOWCXR?marker=2VtzqvfYndD&flexible_dates=1&adults=1',
-        'https://www.aviasales.ru/search/MOWCXR?marker=2VtzqvfYndD&flexible_dates=1&adults=1',
-        'https://www.aviasales.ru/search/MOWCXR?marker=2VtzqvfYndD&flexible_dates=1&adults=1',
-        'https://www.aviasales.ru/search/MOWCXR?marker=2VtzqvfYndD&flexible_dates=1&adults=1',
-        'https://www.aviasales.ru/search/MOWCXR?marker=2VtzqvfYndD&flexible_dates=1&adults=1',
-    ],
-    
-    # ✅ Нячанг → Москва (прямые ссылки с marker)
-    'CXR_MOW': [
-        'https://www.aviasales.ru/search/CXRMOW?marker=2VtzqvfYndD&flexible_dates=1&adults=1',
-        'https://www.aviasales.ru/search/CXRMOW?marker=2VtzqvfYndD&flexible_dates=1&adults=1',
-        'https://www.aviasales.ru/search/CXRMOW?marker=2VtzqvfYndD&flexible_dates=1&adults=1',
-        'https://www.aviasales.ru/search/CXRMOW?marker=2VtzqvfYndD&flexible_dates=1&adults=1',
-        'https://www.aviasales.ru/search/CXRMOW?marker=2VtzqvfYndD&flexible_dates=1&adults=1',
-    ],
-    
-    # ✅ Отель (прямая ссылка)
     'hotel': 'https://trip.tpo.lv/7CShdPK6',
-    
-    # ✅ Тур (прямая ссылка)
     'tour': 'https://level.tpo.lv/yygU1AmM',
 }
 
@@ -56,13 +39,7 @@ class FlightFormatter:
     
     @staticmethod
     def format(flights) -> dict:
-        """
-        Форматирование списка авиабилетов в один пост
-        
-        Формат поста как в примере:
-        🔥 Чартер #Москва → Нячанг → Москва:
-        🔥26 апреля - 5 мая - 35 251 руб. с багажом 10кг - https://...
-        """
+        """Форматирование списка авиабилетов в один пост"""
         # ✅ Защита от неправильных данных
         if not flights or not isinstance(flights, list):
             return {'text': '❌ Нет доступных рейсов', 'parse_mode': 'HTML'}
@@ -78,16 +55,14 @@ class FlightFormatter:
         from_city = CITY_NAMES.get(origin, origin)
         to_city = CITY_NAMES.get(destination, destination)
         
-        # ✅ Заголовок поста (как в вашем примере)
+        # ✅ Заголовок поста
         title = f"🔥 Чартер #{from_city} → {to_city} → {from_city}:\n"
         
         # ✅ Список рейсов
         flight_lines = []
-        links = PARTNER_LINKS.get(f'{origin}_{destination}', PARTNER_LINKS['MOW_CXR'])
         
-        for i, flight in enumerate(flights[:5]):  # Максимум 5 рейсов в посте
+        for i, flight in enumerate(flights[:5]):
             if not isinstance(flight, dict):
-                logger.warning(f"⚠️ Пропущен элемент {i}: {type(flight)}")
                 continue
             
             depart_date = flight.get('depart_date', '')
@@ -103,73 +78,105 @@ class FlightFormatter:
             # Форматируем цену: "35 251 руб."
             price_str = f"{price:,} руб.".replace(',', ' ')
             
-            # Берём ссылку по очереди из списка
-            link = links[i % len(links)] if links else '#'
+            # ✅ ГЕНЕРИРУЕМ ССЫЛКУ С ДАТАМИ ИЗ ДАННЫХ
+            link = FlightFormatter._generate_link(origin, destination, depart_date, return_date)
             
-            # ✅ Строка рейса (точно как в вашем примере)
+            # ✅ Строка рейса
             line = f"🔥{date_range} - {price_str} с багажом {baggage} - {link}"
             flight_lines.append(line)
         
         if not flight_lines:
-            return {'text': '❌ Нет доступных рейсов', 'parse_mode': 'HTML'}
+            return {'text': '❌ Нет рейсов', 'parse_mode': 'HTML'}
         
-        # ✅ Блок с отелем и туром (как в вашем примере)
+        # ✅ Блок с отелем и туром
         hotel_block = (
             f"\n🏨 Забронируй отель ({PARTNER_LINKS['hotel']}) "
             f"с оплатой картой любого банка и через СБП. "
             f"Или хватай тур на эти даты! ({PARTNER_LINKS['tour']})"
         )
         
-        # ✅ Предупреждение (как в вашем примере)
+        # ✅ Предупреждение
         warning = (
             "\n\n⚠️ Цена и наличие билетов может измениться в любой момент. "
             "Проверь прямо сейчас — часто после публикации становится ещё дешевле!"
         )
         
-        # ✅ Собираем полный текст
         text = title + "\n" + "\n".join(flight_lines) + hotel_block + warning
         
         return {
             'text': text,
             'image': None,
-            'link': links[0] if links else '#',
+            'link': flight_lines[0].split(' - ')[-1] if flight_lines else '#',
             'parse_mode': 'HTML'
         }
     
     @staticmethod
-    def _format_date_russian(date_str: str) -> str:
+    def _generate_link(origin: str, destination: str, depart_date: str, return_date: str) -> str:
         """
-        Форматирование даты в стиле: "26 апреля"
+        ✅ ГЕНЕРАЦИЯ ССЫЛКИ С ДИНАМИЧЕСКИМИ ДАТАМИ
+        
+        Формат: https://www.aviasales.ru/search/MOWDDMMCXRDDMM?marker=XXX
         
         Args:
-            date_str: дата в формате ISO (2026-04-26)
+            origin: Код города вылета (MOW, CXR, etc.)
+            destination: Код города прилёта
+            depart_date: Дата вылета в формате ISO (2026-04-26)
+            return_date: Дата возвращения в формате ISO (2026-05-05)
             
         Returns:
-            Строка в формате "26 апреля"
+            Готовая ссылка с датами в формате Aviasales
+        """
+        # ✅ Форматируем даты в DDMM
+        dep_ddmm = FlightFormatter._format_date_ddmm(depart_date)
+        ret_ddmm = FlightFormatter._format_date_ddmm(return_date)
+        
+        # ✅ Определяем направление для базовой ссылки
+        route_key = f'{origin}_{destination}'
+        base_template = BASE_LINKS.get(route_key, BASE_LINKS['MOW_CXR'])
+        
+        # ✅ Подставляем даты в шаблон
+        link = base_template.format(dep_date=dep_ddmm, ret_date=ret_ddmm)
+        
+        logger.debug(f"🔗 Сгенерирована ссылка: {link[:80]}...")
+        return link
+    
+    @staticmethod
+    def _format_date_ddmm(date_str: str) -> str:
+        """
+        Форматирование даты в DDMM для ссылки Aviasales
+        
+        Args:
+            date_str: Дата в формате ISO (2026-04-26)
+            
+        Returns:
+            Строка в формате DDMM (2604)
         """
         if not date_str:
-            return 'Гибкие даты'
+            return '0112'  # Дата по умолчанию (1 декабря)
         
         try:
             dt = datetime.fromisoformat(date_str.replace('Z', '+00:00'))
-            day = dt.day
-            
-            # Месяцы на русском
-            months = [
-                '', 'января', 'февраля', 'марта', 'апреля', 'мая', 'июня',
-                'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря'
-            ]
-            month = months[dt.month]
-            
-            return f"{day} {month}"
-            
+            return f"{dt.day:02d}{dt.month:02d}"  # Формат DDMM с ведущими нулями
         except (ValueError, TypeError):
-            # Если не получилось — возвращаем как есть
+            return '0112'  # Дата по умолчанию при ошибке
+    
+    @staticmethod
+    def _format_date_russian(date_str: str) -> str:
+        """Форматирование даты для отображения: "26 апреля" """
+        if not date_str:
+            return 'Гибкие даты'
+        try:
+            dt = datetime.fromisoformat(date_str.replace('Z', '+00:00'))
+            day = dt.day
+            months = ['', 'января', 'февраля', 'марта', 'апреля', 'мая', 'июня',
+                     'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря']
+            return f"{day} {months[dt.month]}"
+        except:
             return date_str[:10] if len(date_str) >= 10 else date_str
     
     @staticmethod
     def add_hashtags(text: str, tags: list) -> str:
-        """Добавление хэштегов (опционально)"""
+        """Добавление хэштегов"""
         if not tags:
             return text
         hashtags = ' '.join(f'#{tag}' for tag in tags)

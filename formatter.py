@@ -4,10 +4,10 @@ from config import POST_SETTINGS
 
 logger = logging.getLogger(__name__)
 
-# ✅ Названия городов — ПРОВЕРЬТЕ, ЧТО CXR ЕСТЬ!
+# ✅ Названия городов
 CITY_NAMES = {
     'MOW': 'Москва',
-    'CXR': 'Нячанг (Камрань)',  # ✅ Ключевое: CXR → Нячанг
+    'CXR': 'Нячанг',
     'LED': 'Санкт-Петербург',
     'SVX': 'Екатеринбург',
     'KZN': 'Казань',
@@ -19,137 +19,171 @@ CITY_NAMES = {
     'TBS': 'Тбилиси',
     'EVN': 'Ереван',
     'GOA': 'Гоа',
-    'AYT': 'Анталья',
-    'SSH': 'Шарм-эль-Шейх',
-    'SGN': 'Хошимин',
-    'HAN': 'Ханой',
 }
 
-# ✅ Эмодзи для разных стилей
-EMOJIS = {
-    'flight': {
-        'flight': '✈️',
-        'price': '💰',
-        'date': '📅',
-        'link': '🔗',
-        'fire': '🔥',
-        'new': '✨',
-        'top': '🏆',
-        'arrow': '➡️',
-        'beach': '🏖️'
-    },
-    'fire': {
-        'flight': '🔥',
-        'price': '💸',
-        'date': '🗓️',
-        'link': '👉',
-        'fire': '🔥🔥',
-        'new': '🆕',
-        'top': '👑',
-        'arrow': '➡️',
-        'beach': '🏝️'
-    },
-    'minimal': {
-        'flight': '',
-        'price': '',
-        'date': '',
-        'link': '',
-        'fire': '',
-        'new': '',
-        'top': '',
-        'arrow': '→',
-        'beach': ''
-    }
+# ✅ Ваши рабочие ссылки (УЖЕ ВСТАВЛЕНЫ!)
+# 🔗 Москва → Нячанг: https://aviasales.tpm.lv/jocJAnWm?erid=2VtzqvfYndD
+# 🔗 Нячанг → Москва: https://aviasales.tpm.lv/YsBVke5L?erid=2VtzqvfYndD
+# 🔗 Отель: https://trip.tpo.lv/7CShdPK6
+# 🔗 Тур: https://level.tpo.lv/yygU1AmM
+
+PARTNER_LINKS = {
+    # ✅ Москва → Нячанг (5 вариантов для разнообразия — все ведут на одну ссылку)
+    'MOW_CXR': [
+        'https://aviasales.tpm.lv/jocJAnWm?erid=2VtzqvfYndD',
+        'https://aviasales.tpm.lv/jocJAnWm?erid=2VtzqvfYndD',
+        'https://aviasales.tpm.lv/jocJAnWm?erid=2VtzqvfYndD',
+        'https://aviasales.tpm.lv/jocJAnWm?erid=2VtzqvfYndD',
+        'https://aviasales.tpm.lv/jocJAnWm?erid=2VtzqvfYndD',
+    ],
+    
+    # ✅ Нячанг → Москва (5 вариантов для разнообразия — все ведут на одну ссылку)
+    'CXR_MOW': [
+        'https://aviasales.tpm.lv/YsBVke5L?erid=2VtzqvfYndD',
+        'https://aviasales.tpm.lv/YsBVke5L?erid=2VtzqvfYndD',
+        'https://aviasales.tpm.lv/YsBVke5L?erid=2VtzqvfYndD',
+        'https://aviasales.tpm.lv/YsBVke5L?erid=2VtzqvfYndD',
+        'https://aviasales.tpm.lv/YsBVke5L?erid=2VtzqvfYndD',
+    ],
+    
+    # ✅ Отель
+    'hotel': 'https://trip.tpo.lv/7CShdPK6',
+    
+    # ✅ Тур
+    'tour': 'https://level.tpo.lv/yygU1AmM',
 }
 
 
 class FlightFormatter:
-    """Форматирование постов с авиабилетами"""
+    """Форматирование постов в стиле чартеров Москва ↔ Нячанг"""
     
     @staticmethod
-    def format(flight: dict) -> dict:
-        """Основной метод форматирования"""
-        style = POST_SETTINGS.get('emoji_style', 'flight')
-        emojis = EMOJIS.get(style, EMOJIS['flight'])
-        return FlightFormatter._format_flight(flight, emojis)
-    
-    @staticmethod
-    def _format_flight(flight: dict, emojis: dict) -> dict:
-        """Форматирование одного авиабилета"""
-        origin = flight.get('origin', '???')
-        destination = flight.get('destination', '???')
-        price = flight.get('price', 0)
-        airline = flight.get('airline', '')
-        depart_date = flight.get('depart_date', '')
-        return_date = flight.get('return_date', '')
-        link = flight.get('affiliate_link', flight.get('link', '#'))
-        country = flight.get('country_name', '')
-        city = flight.get('city_name', '')
+    def format(flights) -> dict:
+        """
+        Форматирование списка авиабилетов в один пост
         
-        # ✅ Форматируем названия городов — ПРОВЕРКА НА CXR
+        Args:
+            flights: список словарей с данными о рейсах
+            
+        Returns:
+            dict с текстом поста и настройками
+        """
+        # ✅ ЗАЩИТА: проверяем тип данных
+        if not flights:
+            return {'text': '❌ Нет доступных рейсов', 'parse_mode': 'HTML'}
+        
+        if not isinstance(flights, list):
+            logger.error(f"❌ Ожидался список, получено: {type(flights)}")
+            return {'text': '❌ Ошибка формата данных', 'parse_mode': 'HTML'}
+        
+        # ✅ Берём первый элемент для определения направления
+        first = flights[0]
+        
+        # ✅ ЗАЩИТА: первый элемент должен быть словарём
+        if not isinstance(first, dict):
+            logger.error(f"❌ Ожидался dict, получено: {type(first)}")
+            logger.error(f"📋 Структура flights: {flights[:2]}")
+            return {'text': '❌ Ошибка формата данных', 'parse_mode': 'HTML'}
+        
+        origin = first.get('origin', 'MOW')
+        destination = first.get('destination', 'CXR')
+        
         from_city = CITY_NAMES.get(origin, origin)
         to_city = CITY_NAMES.get(destination, destination)
         
-        # ✅ Дополнительная проверка: если city задан — используем его
-        if city and city.lower() not in to_city.lower():
-            to_city = f"{city}, {country}" if country else city
+        # ✅ Заголовок поста
+        title = f"🔥 Чартер #{from_city} → {to_city} → {from_city}:\n"
         
-        # ✅ Добавляем эмодзи пляжа для Вьетнама
-        beach_emoji = emojis.get('beach', '🏖️') if destination == 'CXR' else ''
+        # ✅ Список рейсов
+        flight_lines = []
+        links = PARTNER_LINKS.get(f'{origin}_{destination}', PARTNER_LINKS['MOW_CXR'])
         
-        # ✅ Форматируем даты
-        dep_str = FlightFormatter._format_date(depart_date)
+        for i, flight in enumerate(flights[:5]):  # Максимум 5 рейсов
+            # ✅ ЗАЩИТА: каждый элемент должен быть словарём
+            if not isinstance(flight, dict):
+                logger.warning(f"⚠️ Пропущен элемент {i}: {type(flight)}")
+                continue
+            
+            depart_date = flight.get('depart_date', '')
+            return_date = flight.get('return_date', '')
+            price = flight.get('price', 0)
+            baggage = flight.get('baggage', '10кг')
+            
+            # Форматируем даты: "26 апреля - 5 мая"
+            dep_str = FlightFormatter._format_date_russian(depart_date)
+            ret_str = FlightFormatter._format_date_russian(return_date)
+            date_range = f"{dep_str} - {ret_str}"
+            
+            # Форматируем цену: "35 251 руб."
+            price_str = f"{price:,} руб.".replace(',', ' ')
+            
+            # Берём ссылку по очереди из списка
+            link = links[i % len(links)] if links else '#'
+            
+            # ✅ Строка рейса (как в вашем примере)
+            line = f"🔥{date_range} - {price_str} с багажом {baggage} - {link}"
+            flight_lines.append(line)
         
-        # Возвратная дата
-        return_text = ""
-        if return_date:
-            ret_str = FlightFormatter._format_date(return_date, short=True)
-            return_text = f" — {ret_str}"
+        if not flight_lines:
+            return {'text': '❌ Нет доступных рейсов', 'parse_mode': 'HTML'}
         
-        # ✅ Заголовок поста в зависимости от направления
-        if destination == 'CXR':
-            title = f"{emojis['fire']} <b>АВИАБИЛЕТЫ В НЯЧАНГ</b> {beach_emoji} {emojis['fire']}"
-        elif origin == 'CXR':
-            title = f"{emojis['fire']} <b>АВИАБИЛЕТЫ ИЗ НЯЧАНГА</b> {beach_emoji} {emojis['fire']}"
-        else:
-            title = f"{emojis['fire']} <b>ВЫГОДНЫЙ АВИАБИЛЕТ</b> {emojis['fire']}"
-        
-        # ✅ Текст поста
-        text = (
-            f"{title}\n\n"
-            f"🛫 {from_city} {emojis['arrow']} {to_city}\n"
-            f"{'✈️ ' + airline + '\n' if airline else ''}"
-            f"{emojis['date']} {dep_str}{return_text}\n"
-            f"{emojis['price']} <b>{price:,}₽</b>\n\n"
-            f"{emojis['link']} <a href='{link}'>Найти билеты</a>\n\n"
-            f"<i>Цены актуальны на момент публикации. Партнёр @Aviasales</i>"
+        # ✅ Блок с отелем и туром (как в вашем примере)
+        hotel_block = (
+            f"\n🏨 Забронируй отель ({PARTNER_LINKS['hotel']}) "
+            f"с оплатой картой любого банка и через СБП. "
+            f"Или хватай тур на эти даты! ({PARTNER_LINKS['tour']})"
         )
+        
+        # ✅ Предупреждение (как в вашем примере)
+        warning = (
+            "\n\n⚠️ Цена и наличие билетов может измениться в любой момент. "
+            "Проверь прямо сейчас — часто после публикации становится ещё дешевле!"
+        )
+        
+        # ✅ Собираем полный текст
+        text = title + "\n" + "\n".join(flight_lines) + hotel_block + warning
         
         return {
             'text': text,
             'image': None,
-            'link': link,
+            'link': links[0] if links else '#',
             'parse_mode': 'HTML'
         }
     
     @staticmethod
-    def _format_date(date_str: str, short: bool = False) -> str:
-        """Форматирование даты"""
+    def _format_date_russian(date_str: str) -> str:
+        """
+        Форматирование даты в стиле: "26 апреля"
+        
+        Args:
+            date_str: дата в формате ISO (2026-04-26)
+            
+        Returns:
+            Строка в формате "26 апреля"
+        """
         if not date_str:
             return 'Гибкие даты'
         
         try:
             dt = datetime.fromisoformat(date_str.replace('Z', '+00:00'))
-            if short:
-                return dt.strftime('%d.%m')
-            else:
-                return dt.strftime('%d.%m.%Y')
+            day = dt.day
+            
+            # Месяцы на русском
+            months = [
+                '', 'января', 'февраля', 'марта', 'апреля', 'мая', 'июня',
+                'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря'
+            ]
+            month = months[dt.month]
+            
+            return f"{day} {month}"
+            
         except (ValueError, TypeError):
+            # Если не получилось — возвращаем как есть
             return date_str[:10] if len(date_str) >= 10 else date_str
     
     @staticmethod
     def add_hashtags(text: str, tags: list) -> str:
-        """Добавление хэштегов"""
+        """Добавление хэштегов (опционально)"""
         if not tags:
             return text
         hashtags = ' '.join(f'#{tag}' for tag in tags)
